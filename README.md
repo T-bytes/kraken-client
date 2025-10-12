@@ -1,2 +1,3 @@
-# kraken-client
+# kraken
+
 Unofficial Python client for the Kraken REST and Websockets (v2) API.
