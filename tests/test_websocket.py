@@ -115,7 +115,7 @@ class TestKrakenWSConnection:
             max_retries=1
         )
 
-        with patch('kraken.websocket.websockets.connect', side_effect=mock_connect):
+        with patch('kraken.websocket.connect', side_effect=mock_connect):
             await conn.connect()
 
             # Wait for message processing with timeout
@@ -176,7 +176,7 @@ class TestKrakenWSConnection:
             max_retries=0  # Don't reconnect so we don't get error callback
         )
 
-        with patch('kraken.websocket.websockets.connect', side_effect=mock_connect):
+        with patch('kraken.websocket.connect', side_effect=mock_connect):
             await conn.connect()
 
             # Wait for message processing
@@ -216,7 +216,7 @@ class TestKrakenWSConnection:
             callback=mock_async_callback
         )
 
-        with patch('kraken.websocket.websockets.connect', return_value=mock_ws):
+        with patch('kraken.websocket.connect', return_value=mock_ws):
             with patch('kraken.websocket.logger') as mock_logger:
                 await conn.connect()
 
@@ -263,7 +263,7 @@ class TestKrakenWSConnection:
             callback=error_callback
         )
 
-        with patch('kraken.websocket.websockets.connect', return_value=mock_ws):
+        with patch('kraken.websocket.connect', return_value=mock_ws):
             with patch('kraken.websocket.logger') as mock_logger:
                 await conn.connect()
 
@@ -309,7 +309,7 @@ class TestKrakenWSConnection:
                 conn._should_run = False
                 raise WebSocketException("Final failure")
 
-        with patch('kraken.websocket.websockets.connect', side_effect=mock_connect_with_failure):
+        with patch('kraken.websocket.connect', side_effect=mock_connect_with_failure):
             with patch('kraken.websocket.logger') as mock_logger:
                 await conn.connect()
 
@@ -341,7 +341,7 @@ class TestKrakenWSConnection:
             max_retries=max_retries
         )
 
-        with patch('kraken.websocket.websockets.connect', side_effect=WebSocketException("Connection failed")):
+        with patch('kraken.websocket.connect', side_effect=WebSocketException("Connection failed")):
             with patch('kraken.websocket.logger') as mock_logger:
                 await conn.connect()
 
@@ -395,7 +395,7 @@ class TestKrakenWSConnection:
             callback=mock_callback
         )
 
-        with patch('kraken.websocket.websockets.connect', return_value=mock_ws):
+        with patch('kraken.websocket.connect', return_value=mock_ws):
             await conn.connect()
 
             # Wait briefly for connection

@@ -3,8 +3,8 @@ import json
 import logging
 from typing import Callable, Dict, Optional
 
-import websockets
-from websockets.client import WebSocketClientProtocol
+from websockets.asyncio.client import connect, ClientConnection
+from websockets.exceptions import WebSocketException
 
 
 logger = logging.getLogger(__name__)
@@ -29,7 +29,7 @@ class KrakenWSConnection:
         self.max_delay = max_delay
         self.max_retries = max_retries
 
-        self._websocket: Optional[WebSocketClientProtocol] = None
+        self._websocket: Optional[ClientConnection] = None
         self._task: Optional[asyncio.Task] = None
         self._reconnect_delay = initial_delay
         self._retries = 0
@@ -45,7 +45,7 @@ class KrakenWSConnection:
         """Main connection loop with automatic reconnection"""
         while self._should_run:
             try:
-                async with websockets.connect(self.url) as websocket:
+                async with connect(self.url) as websocket:
                     self._websocket = websocket
                     logger.info(f"Connected to {self.url}")
 
@@ -67,7 +67,7 @@ class KrakenWSConnection:
                         except Exception as e:
                             logger.error(f"Error handling message: {e}")
 
-            except (websockets.exceptions.WebSocketException, ConnectionError, OSError) as e:
+            except (WebSocketException, ConnectionError, OSError) as e:
                 self._websocket = None
                 if self._should_run:
                     await self._handle_reconnection(e)
