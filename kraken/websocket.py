@@ -1,207 +1,368 @@
+import asyncio
 import json
-import threading
-import time
+import logging
+from typing import Callable, Dict, Optional
 
-from autobahn.twisted.websocket import WebSocketClientFactory, \
-    WebSocketClientProtocol, \
-    connectWS
-from twisted.internet import reactor, ssl
-from twisted.internet.protocol import ReconnectingClientFactory
-from twisted.internet.error import ReactorAlreadyRunning
+import websockets
+from websockets.client import WebSocketClientProtocol
 
 
-class KrakenClientProtocol(WebSocketClientProtocol):
+logger = logging.getLogger(__name__)
 
-    def __init__(self, factory, payload=None):
-        super().__init__()
-        self.factory = factory
+
+class KrakenWSConnection:
+    """Manages a single WebSocket connection with reconnection logic"""
+
+    def __init__(
+        self,
+        url: str,
+        payload: dict,
+        callback: Callable[[dict], None],
+        initial_delay: float = 0.1,
+        max_delay: float = 20.0,
+        max_retries: int = 30,
+    ):
+        self.url = url
         self.payload = payload
+        self.callback = callback
+        self.initial_delay = initial_delay
+        self.max_delay = max_delay
+        self.max_retries = max_retries
 
-    def onOpen(self):
-        self.factory.protocol_instance = self
+        self._websocket: Optional[WebSocketClientProtocol] = None
+        self._task: Optional[asyncio.Task] = None
+        self._reconnect_delay = initial_delay
+        self._retries = 0
+        self._should_run = False
+        self._lock = asyncio.Lock()
 
-    def onConnect(self, response):
-        if self.payload:
-            self.sendMessage(self.payload, isBinary=False)
-        # reset the delay after reconnecting
-        self.factory.resetDelay()
+    async def connect(self):
+        """Establish WebSocket connection and start message handling"""
+        self._should_run = True
+        self._task = asyncio.create_task(self._run())
 
-    def onMessage(self, payload, isBinary):
-        if not isBinary:
+    async def _run(self):
+        """Main connection loop with automatic reconnection"""
+        while self._should_run:
             try:
-                payload_obj = json.loads(payload.decode('utf8'))
-            except ValueError:
-                pass
+                async with websockets.connect(self.url) as websocket:
+                    self._websocket = websocket
+                    logger.info(f"Connected to {self.url}")
+
+                    # Send initial payload on connection
+                    if self.payload:
+                        await websocket.send(json.dumps(self.payload))
+
+                    # Reset reconnection parameters on successful connection
+                    self._reconnect_delay = self.initial_delay
+                    self._retries = 0
+
+                    # Handle incoming messages
+                    async for message in websocket:
+                        try:
+                            payload_obj = json.loads(message)
+                            await self._handle_message(payload_obj)
+                        except json.JSONDecodeError as e:
+                            logger.error(f"Failed to decode message: {e}")
+                        except Exception as e:
+                            logger.error(f"Error handling message: {e}")
+
+            except (websockets.exceptions.WebSocketException, ConnectionError, OSError) as e:
+                self._websocket = None
+                if self._should_run:
+                    await self._handle_reconnection(e)
+                else:
+                    break
+            except asyncio.CancelledError:
+                logger.info("Connection task cancelled")
+                break
+            except Exception as e:
+                logger.error(f"Unexpected error: {e}")
+                if self._should_run:
+                    await self._handle_reconnection(e)
+                else:
+                    break
+
+    async def _handle_message(self, payload_obj: dict):
+        """Handle incoming message by calling the callback"""
+        try:
+            # Call callback in a non-blocking way
+            if asyncio.iscoroutinefunction(self.callback):
+                await self.callback(payload_obj)
             else:
-                self.factory.callback(payload_obj)
+                # Run synchronous callback in executor to avoid blocking
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(None, self.callback, payload_obj)
+        except Exception as e:
+            logger.error(f"Error in callback: {e}")
+
+    async def _handle_reconnection(self, error: Exception):
+        """Handle reconnection with exponential backoff"""
+        self._retries += 1
+
+        if self._retries > self.max_retries:
+            logger.error(f"Max reconnection retries ({self.max_retries}) reached")
+            error_payload = {
+                'e': 'error',
+                'm': 'Max reconnect retries reached'
+            }
+            await self._handle_message(error_payload)
+            self._should_run = False
+            return
+
+        logger.warning(
+            f"Connection lost ({error}). Reconnecting in {self._reconnect_delay}s "
+            f"(attempt {self._retries}/{self.max_retries})"
+        )
+
+        await asyncio.sleep(self._reconnect_delay)
+
+        # Exponential backoff
+        self._reconnect_delay = min(self._reconnect_delay * 2, self.max_delay)
+
+    async def disconnect(self):
+        """Gracefully close the WebSocket connection"""
+        self._should_run = False
+
+        if self._websocket and not self._websocket.closed:
+            await self._websocket.close()
+
+        if self._task and not self._task.done():
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
+
+    @property
+    def is_connected(self) -> bool:
+        """Check if WebSocket is currently connected"""
+        return self._websocket is not None and not self._websocket.closed
 
 
-class KrakenReconnectingClientFactory(ReconnectingClientFactory):
-
-    # set initial delay to a short time
-    initialDelay = 0.1
-
-    maxDelay = 20
-
-    maxRetries = 30
-
-
-class KrakenClientFactory(WebSocketClientFactory, KrakenReconnectingClientFactory):
-
-    def __init__(self, *args, payload=None, **kwargs):
-        WebSocketClientFactory.__init__(self, *args, **kwargs)
-        self.protocol_instance = None
-        self.base_client = None
-        self.payload = payload
-
-    protocol = KrakenClientProtocol
-    _reconnect_error_payload = {
-        'e': 'error',
-        'm': 'Max reconnect retries reached'
-    }
-
-    def clientConnectionFailed(self, connector, reason):
-        self.retry(connector)
-        if self.retries > self.maxRetries:
-            self.callback(self._reconnect_error_payload)
-
-    def clientConnectionLost(self, connector, reason):
-        self.retry(connector)
-        if self.retries > self.maxRetries:
-            self.callback(self._reconnect_error_payload)
-
-    def buildProtocol(self, addr):
-        return KrakenClientProtocol(self, payload=self.payload)
-
-
-class KrakenSocketManager(threading.Thread):
+class KrakenWSClient:
+    """Asynchronous WebSocket client for Kraken"""
 
     STREAM_URL = 'wss://ws.kraken.com'
     PRIVATE_STREAM_URL = 'wss://ws-auth.kraken.com'
     VERSION = '/v2'
 
-    def __init__(self):  # client
-        """Initialise the KrakenSocketManager"""
-        threading.Thread.__init__(self)
-        self.factories = {}
-        self._connected_event = threading.Event()
-        self._conns = {}
-        self._user_timer = None
-        self._user_listen_key = None
-        self._user_callback = None
-
-    def _start_socket(self, id_, payload, callback, private=False):
-        if id_ in self._conns:
-            return False
-
-        if private:
-            factory_url = self.PRIVATE_STREAM_URL
-        else:
-            factory_url = self.STREAM_URL
-
-        factory = KrakenClientFactory(factory_url + self.VERSION, payload=payload)
-        factory.base_client = self
-        factory.protocol = KrakenClientProtocol
-        factory.callback = callback
-        factory.reconnect = True
-        self.factories[id_] = factory
-        reactor.callFromThread(self.add_connection, id_, factory_url)
-
-    def add_connection(self, id_, url):
-        """
-        Convenience function to connect and store the resulting
-        connector.
-        """
-        if not url.startswith("wss://"):
-            raise ValueError("expected wss:// URL prefix")
-
-        hostname = url[6:]
-
-        factory = self.factories[id_]
-        options = ssl.optionsForClientTLS(hostname=hostname) # for TLS SNI
-        self._conns[id_] = connectWS(factory, options)
-
-    def stop_socket(self, conn_key):
-        """Stop a websocket given the connection key
+    def __init__(self, key: Optional[str] = None, secret: Optional[str] = None,
+                 nonce_multiplier: float = 1.0):
+        """Initialize the WssClient
 
         Parameters
         ----------
-        conn_key : str
-            Socket connection key
-
-        Returns
-        -------
-        str, bool
-            connection key string if successful, False otherwise
+        key : str, optional
+            API key for authenticated endpoints
+        secret : str, optional
+            API secret for authenticated endpoints
+        nonce_multiplier : float, optional
+            Multiplier for nonce generation
         """
-        if conn_key not in self._conns:
-            return
-
-        # disable reconnecting if we are closing
-        self._conns[conn_key].factory = WebSocketClientFactory(self.STREAM_URL)
-        self._conns[conn_key].disconnect()
-        del self._conns[conn_key]
-
-    def run(self):
-        try:
-            reactor.run(installSignalHandlers=False)
-        except ReactorAlreadyRunning:
-            # Ignore error about reactor already running
-            pass
-
-    def close(self):
-        """Close all connections
-        """
-        keys = set(self._conns.keys())
-        for key in keys:
-            self.stop_socket(key)
-        self._conns = {}
-
-
-class WssClient(KrakenSocketManager):
-    """ Websocket client for Kraken """
-
-    ###########################################################################
-    # Kraken commands
-    ###########################################################################
-
-    def __init__(self, key=None, secret=None, nonce_multiplier=1.0):  # client
-        super().__init__()
         self.key = key
         self.secret = secret
         self.nonce_multiplier = nonce_multiplier
 
-    def stop(self):
-        """Tries to close all connections and finally stops the reactor.
-        Properly stops the program."""
-        try:
-            self.close()
-        finally:
-            reactor.stop()
+        self._connections: Dict[str, KrakenWSConnection] = {}
+        self._lock = asyncio.Lock()
 
-    def subscribe_public(self, params, callback, **kwargs):
-        self._subscribe(params, callback, False, **kwargs)
+    async def subscribe_public(self, params: dict, callback: Callable[[dict], None],
+                               **kwargs) -> str:
+        """Subscribe to a public WebSocket channel
 
-    def subscribe_private(self, params, callback, **kwargs):
-        self._subscribe(params, callback, True, **kwargs)
+        Parameters
+        ----------
+        params : dict
+            Subscription parameters (channel, symbol, etc.)
+        callback : callable
+            Function to call when messages are received
+        **kwargs
+            Additional parameters to include in subscription message
 
-    def _subscribe(self, params, callback, private, **kwargs):
+        Returns
+        -------
+        str
+            Connection ID for this subscription
+        """
+        return await self._subscribe(params, callback, False, **kwargs)
+
+    async def subscribe_private(self, params: dict, callback: Callable[[dict], None],
+                                **kwargs) -> str:
+        """Subscribe to a private WebSocket channel
+
+        Parameters
+        ----------
+        params : dict
+            Subscription parameters (channel, symbol, etc.)
+        callback : callable
+            Function to call when messages are received
+        **kwargs
+            Additional parameters to include in subscription message
+
+        Returns
+        -------
+        str
+            Connection ID for this subscription
+        """
+        return await self._subscribe(params, callback, True, **kwargs)
+
+    async def _subscribe(self, params: dict, callback: Callable[[dict], None],
+                        private: bool, **kwargs) -> str:
+        """Internal method to handle subscriptions
+
+        Parameters
+        ----------
+        params : dict
+            Subscription parameters
+        callback : callable
+            Message handler callback
+        private : bool
+            Whether this is a private (authenticated) connection
+        **kwargs
+            Additional subscription parameters
+
+        Returns
+        -------
+        str
+            Connection ID
+        """
+        # Generate connection ID based on channel and symbol
         if 'symbol' in params:
-            id_ = "_".join([params['channel'], params['symbol'][0]])
+            conn_id = "_".join([params['channel'], params['symbol'][0]])
         else:
-            id_ = "_".join([params['channel']])
+            conn_id = "_".join([params['channel']])
 
-        data = {
-            'method': 'subscribe',
-            'params': params,
-        }
-        data.update(**kwargs)
-        payload = json.dumps(data, ensure_ascii=False).encode('utf8')
-        return self._start_socket(id_, payload, callback, private=private)
+        async with self._lock:
+            # Check if connection already exists
+            if conn_id in self._connections:
+                logger.warning(f"Connection {conn_id} already exists")
+                return conn_id
 
-    def request(self, request, callback, **kwargs):
-        id_ = str(int(time.time() * 1000))
+            # Build subscription message
+            data = {
+                'method': 'subscribe',
+                'params': params,
+            }
+            data.update(**kwargs)
+
+            # Select appropriate URL
+            url = (self.PRIVATE_STREAM_URL if private else self.STREAM_URL) + self.VERSION
+
+            # Create and start connection
+            connection = KrakenWSConnection(
+                url=url,
+                payload=data,
+                callback=callback,
+            )
+
+            self._connections[conn_id] = connection
+            await connection.connect()
+
+            logger.info(f"Subscribed to {conn_id}")
+            return conn_id
+
+    async def request(self, request: dict, callback: Callable[[dict], None],
+                     **kwargs) -> str:
+        """Send a request to Kraken WebSocket API
+
+        Parameters
+        ----------
+        request : dict
+            Request payload
+        callback : callable
+            Function to call when response is received
+        **kwargs
+            Additional parameters (e.g., req_id)
+
+        Returns
+        -------
+        str
+            Connection ID for this request
+        """
+        import time
+
+        conn_id = str(int(time.time() * 1000))
+
         if 'req_id' in kwargs:
             request.update(**kwargs)
-        payload = json.dumps(request, ensure_ascii=False).encode('utf8')
-        return self._start_socket(id_, payload, callback, private=True)
+
+        async with self._lock:
+            url = self.PRIVATE_STREAM_URL + self.VERSION
+
+            connection = KrakenWSConnection(
+                url=url,
+                payload=request,
+                callback=callback,
+            )
+
+            self._connections[conn_id] = connection
+            await connection.connect()
+
+            return conn_id
+
+    async def stop_socket(self, conn_id: str) -> bool:
+        """Stop a specific WebSocket connection
+
+        Parameters
+        ----------
+        conn_id : str
+            Connection ID to stop
+
+        Returns
+        -------
+        bool
+            True if connection was stopped, False if not found
+        """
+        async with self._lock:
+            if conn_id not in self._connections:
+                logger.warning(f"Connection {conn_id} not found")
+                return False
+
+            connection = self._connections[conn_id]
+            await connection.disconnect()
+            del self._connections[conn_id]
+
+            logger.info(f"Stopped connection {conn_id}")
+            return True
+
+    async def close(self):
+        """Close all WebSocket connections"""
+        async with self._lock:
+            conn_ids = list(self._connections.keys())
+
+        for conn_id in conn_ids:
+            await self.stop_socket(conn_id)
+
+        logger.info("All connections closed")
+
+    async def stop(self):
+        """Stop the client and close all connections"""
+        await self.close()
+
+    def get_connection_ids(self) -> list:
+        """Get list of active connection IDs
+
+        Returns
+        -------
+        list
+            List of active connection ID strings
+        """
+        return list(self._connections.keys())
+
+    def is_connected(self, conn_id: str) -> bool:
+        """Check if a specific connection is active
+
+        Parameters
+        ----------
+        conn_id : str
+            Connection ID to check
+
+        Returns
+        -------
+        bool
+            True if connected, False otherwise
+        """
+        if conn_id not in self._connections:
+            return False
+        return self._connections[conn_id].is_connected
