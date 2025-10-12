@@ -15,7 +15,8 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-  "pytest"
+  "pytest",
+  "pytest-asyncio"
 ]
 lint = [
   "ruff"
@@ -62,3 +63,10 @@ quote-style = "double"
 indent-style = "space"
 line-ending = "auto"
 docstring-code-line-length = "dynamic"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
