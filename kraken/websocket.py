@@ -10,7 +10,7 @@ from websockets.exceptions import WebSocketException
 logger = logging.getLogger(__name__)
 
 
-class KrakenWSConnection:
+class KrakenSocketConnection:
     """Manages a single WebSocket connection with reconnection logic"""
 
     def __init__(
@@ -140,7 +140,7 @@ class KrakenWSConnection:
         return self._websocket is not None and not self._websocket.closed
 
 
-class KrakenWSClient:
+class KrakenClientWS:
     """Asynchronous WebSocket client for Kraken"""
 
     STREAM_URL = 'wss://ws.kraken.com'
@@ -164,7 +164,7 @@ class KrakenWSClient:
         self.secret = secret
         self.nonce_multiplier = nonce_multiplier
 
-        self._connections: Dict[str, KrakenWSConnection] = {}
+        self._connections: Dict[str, KrakenSocketConnection] = {}
         self._lock = asyncio.Lock()
 
     async def subscribe_public(self, params: dict, callback: Callable[[dict], None],
@@ -250,7 +250,7 @@ class KrakenWSClient:
             url = (self.PRIVATE_STREAM_URL if private else self.STREAM_URL) + self.VERSION
 
             # Create and start connection
-            connection = KrakenWSConnection(
+            connection = KrakenSocketConnection(
                 url=url,
                 payload=data,
                 callback=callback,
@@ -290,7 +290,7 @@ class KrakenWSClient:
         async with self._lock:
             url = self.PRIVATE_STREAM_URL + self.VERSION
 
-            connection = KrakenWSConnection(
+            connection = KrakenSocketConnection(
                 url=url,
                 payload=request,
                 callback=callback,
