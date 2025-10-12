@@ -22,7 +22,6 @@ from typing import Any, Dict, Optional
 
 import requests
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -48,31 +47,70 @@ class APIType(Enum):
         """
         _channels = {
             APIType.PUBLIC: {
-                "Time", "Assets", "AssetPairs", "Ticker", "OHLC",
-                "Depth", "Trades", "Spread", "SystemStatus"
+                "Time",
+                "Assets",
+                "AssetPairs",
+                "Ticker",
+                "OHLC",
+                "Depth",
+                "Trades",
+                "Spread",
+                "SystemStatus",
             },
             APIType.PRIVATE: {
-                "Balance", "BalanceEx", "TradeBalance", "OpenOrders", "ClosedOrders",
-                "QueryOrders", "TradesHistory", "QueryTrades", "OpenPositions",
-                "Ledgers", "QueryLedgers", "TradeVolume", "AddExport", "ExportStatus",
-                "RetrieveExport", "RemoveExport", "GetWebSocketsToken",
-                "CreateSubaccount", "AccountTransfer"
+                "Balance",
+                "BalanceEx",
+                "TradeBalance",
+                "OpenOrders",
+                "ClosedOrders",
+                "QueryOrders",
+                "TradesHistory",
+                "QueryTrades",
+                "OpenPositions",
+                "Ledgers",
+                "QueryLedgers",
+                "TradeVolume",
+                "AddExport",
+                "ExportStatus",
+                "RetrieveExport",
+                "RemoveExport",
+                "GetWebSocketsToken",
+                "CreateSubaccount",
+                "AccountTransfer",
             },
             APIType.TRADING: {
-                "AddOrder", "AddOrderBatch", "EditOrder", "CancelOrder",
-                "CancelOrderBatch", "CancelAll", "CancelAllOrdersAfter"
+                "AddOrder",
+                "AddOrderBatch",
+                "EditOrder",
+                "CancelOrder",
+                "CancelOrderBatch",
+                "CancelAll",
+                "CancelAllOrdersAfter",
             },
             APIType.FUNDING: {
-                "DepositMethods", "DepositAddresses", "DepositStatus",
-                "WithdrawInfo", "Withdraw", "WithdrawStatus", "WithdrawCancel",
-                "WalletTransfer"
+                "DepositMethods",
+                "DepositAddresses",
+                "DepositStatus",
+                "WithdrawInfo",
+                "Withdraw",
+                "WithdrawStatus",
+                "WithdrawCancel",
+                "WalletTransfer",
             },
             APIType.STAKING: {
-                "Earn/Strategies", "Earn/Allocations", "Earn/Allocate",
-                "Earn/Deallocate", "Earn/AllocateStatus", "Earn/DeallocateStatus",
-                "Staking/Assets", "Staking/Balance", "Stake", "Unstake",
-                "Staking/Pending", "Staking/Transactions"
-            }
+                "Earn/Strategies",
+                "Earn/Allocations",
+                "Earn/Allocate",
+                "Earn/Deallocate",
+                "Earn/AllocateStatus",
+                "Earn/DeallocateStatus",
+                "Staking/Assets",
+                "Staking/Balance",
+                "Stake",
+                "Unstake",
+                "Staking/Pending",
+                "Staking/Transactions",
+            },
         }
         return _channels[self]
 
@@ -98,21 +136,25 @@ class APIType(Enum):
 
 class KrakenAPIError(Exception):
     """Base exception for Kraken API errors"""
+
     pass
 
 
 class KrakenAuthenticationError(KrakenAPIError):
     """Raised when authentication fails"""
+
     pass
 
 
 class KrakenRequestError(KrakenAPIError):
     """Raised when a client-side request error occurs"""
+
     pass
 
 
 class KrakenResponseError(KrakenAPIError):
     """Raised when the API returns an error response"""
+
     pass
 
 
@@ -138,10 +180,7 @@ class KrakenClientREST:
     USER_AGENT = "Kraken REST API Client/1.0"
 
     def __init__(
-        self,
-        api_key: Optional[str] = None,
-        api_secret: Optional[str] = None,
-        timeout: int = 30
+        self, api_key: Optional[str] = None, api_secret: Optional[str] = None, timeout: int = 30
     ):
         """Initialize the Kraken REST client
 
@@ -209,10 +248,10 @@ class KrakenClientREST:
 
         # Encode the data
         postdata = "&".join([f"{key}={value}" for key, value in data.items()])
-        encoded = (nonce + postdata).encode('utf-8')
+        encoded = (nonce + postdata).encode("utf-8")
 
         # Create SHA256 hash
-        message = url_path.encode('utf-8') + hashlib.sha256(encoded).digest()
+        message = url_path.encode("utf-8") + hashlib.sha256(encoded).digest()
 
         # Create HMAC-SHA512 signature
         signature = hmac.new(self.api_secret, message, hashlib.sha512)
@@ -220,10 +259,7 @@ class KrakenClientREST:
         return base64.b64encode(signature.digest()).decode()
 
     def _request(
-        self,
-        method: str,
-        api_type: APIType,
-        params: Optional[Dict[str, Any]] = None
+        self, method: str, api_type: APIType, params: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """Internal method to make HTTP requests to Kraken API
 
@@ -259,30 +295,24 @@ class KrakenClientREST:
 
                 # Add nonce to parameters
                 nonce = str(int(time.time() * 1000))
-                params['nonce'] = nonce
+                params["nonce"] = nonce
 
                 # Generate signature
                 signature = self._sign_request(url_path, params, nonce)
 
                 # Add authentication headers
-                headers['API-Key'] = self.api_key
-                headers['API-Sign'] = signature
+                headers["API-Key"] = self.api_key
+                headers["API-Sign"] = signature
 
                 logger.debug(f"Making authenticated request to {method}")
                 response = self.session.post(
-                    url,
-                    data=params,
-                    headers=headers,
-                    timeout=self.timeout
+                    url, data=params, headers=headers, timeout=self.timeout
                 )
             else:
                 # Public endpoint - no authentication required
                 logger.debug(f"Making public request to {method}")
                 response = self.session.get(
-                    url,
-                    params=params,
-                    headers=headers,
-                    timeout=self.timeout
+                    url, params=params, headers=headers, timeout=self.timeout
                 )
 
             # Raise exception for HTTP errors
@@ -309,19 +339,15 @@ class KrakenClientREST:
             raise KrakenResponseError(f"Invalid JSON response: {e}")
 
         # Check for API errors
-        if 'error' in data and data['error']:
-            error_msg = ', '.join(data['error'])
+        if "error" in data and data["error"]:
+            error_msg = ", ".join(data["error"])
             logger.error(f"API error for {method}: {error_msg}")
             raise KrakenResponseError(f"API error: {error_msg}")
 
         logger.info(f"Successfully completed request to {method}")
         return data
 
-    def request(
-        self,
-        method: str,
-        params: Optional[Dict[str, Any]] = None
-    ) -> Dict[str, Any]:
+    def request(self, method: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Make a request to the Kraken API
 
         This is the main public method for interacting with the API.
@@ -349,11 +375,7 @@ class KrakenClientREST:
         api_type = self._get_api_type(method)
         return self._request(method, api_type, params)
 
-    def get(
-        self,
-        method: str,
-        params: Optional[Dict[str, Any]] = None
-    ) -> Dict[str, Any]:
+    def get(self, method: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Convenience method for GET requests (typically public endpoints)
 
         Parameters:
@@ -365,11 +387,7 @@ class KrakenClientREST:
         """
         return self.request(method, params)
 
-    def post(
-        self,
-        method: str,
-        params: Optional[Dict[str, Any]] = None
-    ) -> Dict[str, Any]:
+    def post(self, method: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Convenience method for POST requests (typically private endpoints)
 
         Parameters:

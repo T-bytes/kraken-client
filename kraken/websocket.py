@@ -3,9 +3,8 @@ import json
 import logging
 from typing import Callable, Dict, Optional
 
-from websockets.asyncio.client import connect, ClientConnection
+from websockets.asyncio.client import ClientConnection, connect
 from websockets.exceptions import WebSocketException
-
 
 logger = logging.getLogger(__name__)
 
@@ -102,10 +101,7 @@ class KrakenSocketConnection:
 
         if self._retries > self.max_retries:
             logger.error(f"Max reconnection retries ({self.max_retries}) reached")
-            error_payload = {
-                'e': 'error',
-                'm': 'Max reconnect retries reached'
-            }
+            error_payload = {"e": "error", "m": "Max reconnect retries reached"}
             await self._handle_message(error_payload)
             self._should_run = False
             return
@@ -143,12 +139,16 @@ class KrakenSocketConnection:
 class KrakenClientWS:
     """Asynchronous WebSocket client for Kraken"""
 
-    STREAM_URL = 'wss://ws.kraken.com'
-    PRIVATE_STREAM_URL = 'wss://ws-auth.kraken.com'
-    VERSION = '/v2'
+    STREAM_URL = "wss://ws.kraken.com"
+    PRIVATE_STREAM_URL = "wss://ws-auth.kraken.com"
+    VERSION = "/v2"
 
-    def __init__(self, key: Optional[str] = None, secret: Optional[str] = None,
-                 nonce_multiplier: float = 1.0):
+    def __init__(
+        self,
+        key: Optional[str] = None,
+        secret: Optional[str] = None,
+        nonce_multiplier: float = 1.0,
+    ):
         """Initialize the WssClient
 
         Parameters
@@ -167,8 +167,9 @@ class KrakenClientWS:
         self._connections: Dict[str, KrakenSocketConnection] = {}
         self._lock = asyncio.Lock()
 
-    async def subscribe_public(self, params: dict, callback: Callable[[dict], None],
-                               **kwargs) -> str:
+    async def subscribe_public(
+        self, params: dict, callback: Callable[[dict], None], **kwargs
+    ) -> str:
         """Subscribe to a public WebSocket channel
 
         Parameters
@@ -187,8 +188,9 @@ class KrakenClientWS:
         """
         return await self._subscribe(params, callback, False, **kwargs)
 
-    async def subscribe_private(self, params: dict, callback: Callable[[dict], None],
-                                **kwargs) -> str:
+    async def subscribe_private(
+        self, params: dict, callback: Callable[[dict], None], **kwargs
+    ) -> str:
         """Subscribe to a private WebSocket channel
 
         Parameters
@@ -207,8 +209,9 @@ class KrakenClientWS:
         """
         return await self._subscribe(params, callback, True, **kwargs)
 
-    async def _subscribe(self, params: dict, callback: Callable[[dict], None],
-                        private: bool, **kwargs) -> str:
+    async def _subscribe(
+        self, params: dict, callback: Callable[[dict], None], private: bool, **kwargs
+    ) -> str:
         """Internal method to handle subscriptions
 
         Parameters
@@ -228,10 +231,10 @@ class KrakenClientWS:
             Connection ID
         """
         # Generate connection ID based on channel and symbol
-        if 'symbol' in params:
-            conn_id = "_".join([params['channel'], params['symbol'][0]])
+        if "symbol" in params:
+            conn_id = "_".join([params["channel"], params["symbol"][0]])
         else:
-            conn_id = "_".join([params['channel']])
+            conn_id = "_".join([params["channel"]])
 
         async with self._lock:
             # Check if connection already exists
@@ -241,8 +244,8 @@ class KrakenClientWS:
 
             # Build subscription message
             data = {
-                'method': 'subscribe',
-                'params': params,
+                "method": "subscribe",
+                "params": params,
             }
             data.update(**kwargs)
 
@@ -262,8 +265,7 @@ class KrakenClientWS:
             logger.info(f"Subscribed to {conn_id}")
             return conn_id
 
-    async def request(self, request: dict, callback: Callable[[dict], None],
-                     **kwargs) -> str:
+    async def request(self, request: dict, callback: Callable[[dict], None], **kwargs) -> str:
         """Send a request to Kraken WebSocket API
 
         Parameters
@@ -284,7 +286,7 @@ class KrakenClientWS:
 
         conn_id = str(int(time.time() * 1000))
 
-        if 'req_id' in kwargs:
+        if "req_id" in kwargs:
             request.update(**kwargs)
 
         async with self._lock:
