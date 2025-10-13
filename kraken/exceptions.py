@@ -1,22 +1,15 @@
 class KrakenAPIError(Exception):
-    """Base exception for Kraken API errors"""
+    """Base exception for Kraken API errors.
 
-    pass
+    This exception is used specifically for errors returned by the Kraken API
+    in response bodies (e.g., invalid parameters, rate limits, etc.).
 
-
-class KrakenAuthenticationError(KrakenAPIError):
-    """Raised when authentication fails"""
-
-    pass
-
-
-class KrakenRequestError(KrakenAPIError):
-    """Raised when a client-side request error occurs"""
-
-    pass
-
-
-class KrakenResponseError(KrakenAPIError):
-    """Raised when the API returns an error response"""
+    For other error types, the library uses standard exceptions:
+    - ValueError: Authentication/configuration errors
+    - requests.exceptions.*: HTTP client errors (sync)
+    - httpx.*: HTTP client errors (async)
+    - websockets.exceptions.*: WebSocket errors
+    - json.JSONDecodeError: Response parsing errors
+    """
 
     pass

@@ -29,11 +29,7 @@ from typing import Any, Dict, Optional
 import httpx
 import requests
 
-from .exceptions import (
-    KrakenAuthenticationError,
-    KrakenRequestError,
-    KrakenResponseError,
-)
+from .exceptions import KrakenAPIError
 
 logger = logging.getLogger(__name__)
 
@@ -181,7 +177,7 @@ class KrakenClientREST:
             timeout (int, optional): Request timeout in seconds. Default is 30
 
         Raises:
-            KrakenAuthenticationError: If credentials are required but not provided
+            ValueError: If API secret format is invalid
         """
         self.api_key = api_key or os.getenv("KRAKEN_API_KEY")
         secret_str = api_secret or os.getenv("KRAKEN_API_SECRET")
@@ -192,7 +188,7 @@ class KrakenClientREST:
                 self.api_secret = base64.b64decode(secret_str)
             except Exception as e:
                 logger.error(f"Failed to decode API secret: {e}")
-                raise KrakenAuthenticationError(f"Invalid API secret format: {e}")
+                raise ValueError(f"Invalid API secret format: {e}") from e
 
         self.timeout = timeout
         self.session = requests.Session()
@@ -210,13 +206,13 @@ class KrakenClientREST:
             APIType: The type of API endpoint
 
         Raises:
-            KrakenRequestError: If method is not found in any API type
+            ValueError: If method is not found in any API type
         """
         for api_type in APIType:
             if method in api_type.channels:
                 return api_type
 
-        raise KrakenRequestError(f"Unknown API method: {method}")
+        raise ValueError(f"Unknown API method: {method}")
 
     def _sign_request(self, url_path: str, data: Dict[str, Any], nonce: str) -> str:
         """Generate signature for authenticated requests
@@ -230,10 +226,10 @@ class KrakenClientREST:
             str: Base64-encoded HMAC-SHA512 signature
 
         Raises:
-            KrakenAuthenticationError: If API secret is not configured
+            ValueError: If API secret is not configured
         """
         if not self.api_secret:
-            raise KrakenAuthenticationError("API secret required for private endpoints")
+            raise ValueError("API secret required for private endpoints")
 
         # Encode the data
         postdata = "&".join([f"{key}={value}" for key, value in data.items()])
@@ -261,9 +257,9 @@ class KrakenClientREST:
             Dict[str, Any]: Parsed JSON response from the API
 
         Raises:
-            KrakenAuthenticationError: If authentication is required but credentials missing
-            KrakenRequestError: If the request fails due to client-side issues
-            KrakenResponseError: If the API returns an error
+            ValueError: If authentication is required but credentials missing, or JSON parsing fails
+            requests.exceptions.*: If HTTP request fails
+            KrakenAPIError: If the Kraken API returns an error response
         """
         if params is None:
             params = {}
@@ -277,7 +273,7 @@ class KrakenClientREST:
             if api_type.is_private():
                 # Private endpoint - requires authentication
                 if not self.api_key or not self.api_secret:
-                    raise KrakenAuthenticationError(
+                    raise ValueError(
                         "API key and secret required for private endpoints. "
                         "Set KRAKEN_API_KEY and KRAKEN_API_SECRET environment variables."
                     )
@@ -309,29 +305,29 @@ class KrakenClientREST:
 
         except requests.exceptions.Timeout as e:
             logger.error(f"Request timeout for {method}: {e}")
-            raise KrakenRequestError(f"Request timeout: {e}")
+            raise
         except requests.exceptions.ConnectionError as e:
             logger.error(f"Connection error for {method}: {e}")
-            raise KrakenRequestError(f"Connection error: {e}")
+            raise
         except requests.exceptions.HTTPError as e:
             logger.error(f"HTTP error for {method}: {e}")
-            raise KrakenRequestError(f"HTTP error: {e}")
+            raise
         except requests.exceptions.RequestException as e:
             logger.error(f"Request failed for {method}: {e}")
-            raise KrakenRequestError(f"Request failed: {e}")
+            raise
 
         # Parse response
         try:
             data = response.json()
         except ValueError as e:
             logger.error(f"Failed to parse JSON response: {e}")
-            raise KrakenResponseError(f"Invalid JSON response: {e}")
+            raise ValueError(f"Invalid JSON response: {e}") from e
 
         # Check for API errors
         if "error" in data and data["error"]:
             error_msg = ", ".join(data["error"])
             logger.error(f"API error for {method}: {error_msg}")
-            raise KrakenResponseError(f"API error: {error_msg}")
+            raise KrakenAPIError(f"API error: {error_msg}")
 
         logger.info(f"Successfully completed request to {method}")
         return data
@@ -350,9 +346,9 @@ class KrakenClientREST:
             Dict[str, Any]: API response data
 
         Raises:
-            KrakenRequestError: If the method is unknown or request fails
-            KrakenAuthenticationError: If authentication fails
-            KrakenResponseError: If the API returns an error
+            ValueError: If the method is unknown or authentication fails
+            requests.exceptions.*: If HTTP request fails
+            KrakenAPIError: If the API returns an error response
 
         Example:
             >>> client.request("Time")
@@ -446,7 +442,7 @@ class KrakenClientAsyncREST:
             timeout (int, optional): Request timeout in seconds. Default is 30
 
         Raises:
-            KrakenAuthenticationError: If API secret format is invalid
+            ValueError: If API secret format is invalid
         """
         self.api_key = api_key or os.getenv("KRAKEN_API_KEY")
         secret_str = api_secret or os.getenv("KRAKEN_API_SECRET")
@@ -457,7 +453,7 @@ class KrakenClientAsyncREST:
                 self.api_secret = base64.b64decode(secret_str)
             except Exception as e:
                 logger.error(f"Failed to decode API secret: {e}")
-                raise KrakenAuthenticationError(f"Invalid API secret format: {e}")
+                raise ValueError(f"Invalid API secret format: {e}") from e
 
         self.timeout = timeout
         self.client: Optional[httpx.AsyncClient] = None
@@ -474,13 +470,13 @@ class KrakenClientAsyncREST:
             APIType: The type of API endpoint
 
         Raises:
-            KrakenRequestError: If method is not found in any API type
+            ValueError: If method is not found in any API type
         """
         for api_type in APIType:
             if method in api_type.channels:
                 return api_type
 
-        raise KrakenRequestError(f"Unknown API method: {method}")
+        raise ValueError(f"Unknown API method: {method}")
 
     def _sign_request(self, url_path: str, data: Dict[str, Any], nonce: str) -> str:
         """Generate signature for authenticated requests
@@ -494,10 +490,10 @@ class KrakenClientAsyncREST:
             str: Base64-encoded HMAC-SHA512 signature
 
         Raises:
-            KrakenAuthenticationError: If API secret is not configured
+            ValueError: If API secret is not configured
         """
         if not self.api_secret:
-            raise KrakenAuthenticationError("API secret required for private endpoints")
+            raise ValueError("API secret required for private endpoints")
 
         # Encode the data
         postdata = "&".join([f"{key}={value}" for key, value in data.items()])
@@ -525,12 +521,13 @@ class KrakenClientAsyncREST:
             Dict[str, Any]: Parsed JSON response from the API
 
         Raises:
-            KrakenAuthenticationError: If authentication is required but credentials missing
-            KrakenRequestError: If the request fails due to client-side issues
-            KrakenResponseError: If the API returns an error
+            RuntimeError: If client is not initialized
+            ValueError: If authentication is required but credentials missing, or JSON parsing fails
+            httpx.*: If HTTP request fails
+            KrakenAPIError: If the Kraken API returns an error response
         """
         if self.client is None:
-            raise KrakenRequestError("Client not initialized. Use async context manager.")
+            raise RuntimeError("Client not initialized. Use async context manager.")
 
         if params is None:
             params = {}
@@ -544,7 +541,7 @@ class KrakenClientAsyncREST:
             if api_type.is_private():
                 # Private endpoint - requires authentication
                 if not self.api_key or not self.api_secret:
-                    raise KrakenAuthenticationError(
+                    raise ValueError(
                         "API key and secret required for private endpoints. "
                         "Set KRAKEN_API_KEY and KRAKEN_API_SECRET environment variables."
                     )
@@ -576,29 +573,29 @@ class KrakenClientAsyncREST:
 
         except httpx.TimeoutException as e:
             logger.error(f"Request timeout for {method}: {e}")
-            raise KrakenRequestError(f"Request timeout: {e}")
+            raise
         except httpx.ConnectError as e:
             logger.error(f"Connection error for {method}: {e}")
-            raise KrakenRequestError(f"Connection error: {e}")
+            raise
         except httpx.HTTPStatusError as e:
             logger.error(f"HTTP error for {method}: {e}")
-            raise KrakenRequestError(f"HTTP error: {e}")
+            raise
         except httpx.RequestError as e:
             logger.error(f"Request failed for {method}: {e}")
-            raise KrakenRequestError(f"Request failed: {e}")
+            raise
 
         # Parse response
         try:
             data = response.json()
         except ValueError as e:
             logger.error(f"Failed to parse JSON response: {e}")
-            raise KrakenResponseError(f"Invalid JSON response: {e}")
+            raise ValueError(f"Invalid JSON response: {e}") from e
 
         # Check for API errors
         if "error" in data and data["error"]:
             error_msg = ", ".join(data["error"])
             logger.error(f"API error for {method}: {error_msg}")
-            raise KrakenResponseError(f"API error: {error_msg}")
+            raise KrakenAPIError(f"API error: {error_msg}")
 
         logger.info(f"Successfully completed async request to {method}")
         return data
@@ -619,9 +616,9 @@ class KrakenClientAsyncREST:
             Dict[str, Any]: API response data
 
         Raises:
-            KrakenRequestError: If the method is unknown or request fails
-            KrakenAuthenticationError: If authentication fails
-            KrakenResponseError: If the API returns an error
+            ValueError: If the method is unknown or authentication fails
+            httpx.*: If HTTP request fails
+            KrakenAPIError: If the API returns an error response
 
         Example:
             >>> await client.request("Time")

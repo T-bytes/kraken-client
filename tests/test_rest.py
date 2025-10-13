@@ -7,14 +7,8 @@ from unittest.mock import MagicMock, Mock, patch
 import pytest
 import requests
 
-from kraken.rest import (
-    APIType,
-    KrakenAPIError,
-    KrakenAuthenticationError,
-    KrakenClientREST,
-    KrakenRequestError,
-    KrakenResponseError,
-)
+from kraken.exceptions import KrakenAPIError
+from kraken.rest import APIType, KrakenClientREST
 
 
 class TestAPIType:
@@ -115,7 +109,7 @@ class TestKrakenClientRESTInitialization:
 
     def test_init_with_invalid_secret(self):
         """Test initialization with invalid base64 secret"""
-        with pytest.raises(KrakenAuthenticationError):
+        with pytest.raises(ValueError):
             KrakenClientREST(api_key="test", api_secret="invalid_base64!@#$%")
 
     def test_init_custom_timeout(self):
@@ -175,7 +169,7 @@ class TestKrakenClientRESTMethods:
 
     def test_get_api_type_unknown(self, client):
         """Test _get_api_type with unknown method"""
-        with pytest.raises(KrakenRequestError, match="Unknown API method"):
+        with pytest.raises(ValueError, match="Unknown API method"):
             client._get_api_type("InvalidMethod")
 
     def test_sign_request(self, client):
@@ -194,7 +188,7 @@ class TestKrakenClientRESTMethods:
 
     def test_sign_request_without_secret(self, client_no_auth):
         """Test request signing without API secret"""
-        with pytest.raises(KrakenAuthenticationError, match="API secret required"):
+        with pytest.raises(ValueError, match="API secret required"):
             client_no_auth._sign_request("/0/private/Balance", {}, "123")
 
     @patch("kraken.rest.requests.Session.get")
@@ -234,7 +228,7 @@ class TestKrakenClientRESTMethods:
     def test_request_private_without_auth(self, client_no_auth):
         """Test making a private request without credentials"""
         with patch("kraken.rest.requests.Session.post") as mock_post:
-            with pytest.raises(KrakenAuthenticationError, match="API key and secret required"):
+            with pytest.raises(ValueError, match="API key and secret required"):
                 client_no_auth.request("Balance")
 
     @patch("kraken.rest.requests.Session.get")
@@ -256,7 +250,7 @@ class TestKrakenClientRESTMethods:
         """Test request timeout"""
         mock_get.side_effect = requests.exceptions.Timeout("Request timeout")
 
-        with pytest.raises(KrakenRequestError, match="Request timeout"):
+        with pytest.raises(requests.exceptions.Timeout):
             client_no_auth.request("Time")
 
     @patch("kraken.rest.requests.Session.get")
@@ -264,7 +258,7 @@ class TestKrakenClientRESTMethods:
         """Test connection error"""
         mock_get.side_effect = requests.exceptions.ConnectionError("Connection failed")
 
-        with pytest.raises(KrakenRequestError, match="Connection error"):
+        with pytest.raises(requests.exceptions.ConnectionError):
             client_no_auth.request("Time")
 
     @patch("kraken.rest.requests.Session.get")
@@ -274,7 +268,7 @@ class TestKrakenClientRESTMethods:
         mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError("404")
         mock_get.return_value = mock_response
 
-        with pytest.raises(KrakenRequestError, match="HTTP error"):
+        with pytest.raises(requests.exceptions.HTTPError):
             client_no_auth.request("Time")
 
     @patch("kraken.rest.requests.Session.get")
@@ -285,7 +279,7 @@ class TestKrakenClientRESTMethods:
         mock_response.raise_for_status = Mock()
         mock_get.return_value = mock_response
 
-        with pytest.raises(KrakenResponseError, match="Invalid JSON response"):
+        with pytest.raises(ValueError, match="Invalid JSON response"):
             client_no_auth.request("Time")
 
     @patch("kraken.rest.requests.Session.get")
@@ -296,7 +290,7 @@ class TestKrakenClientRESTMethods:
         mock_response.raise_for_status = Mock()
         mock_get.return_value = mock_response
 
-        with pytest.raises(KrakenResponseError, match="API error"):
+        with pytest.raises(KrakenAPIError, match="API error"):
             client_no_auth.request("Time")
 
     @patch("kraken.rest.requests.Session.get")
@@ -339,21 +333,10 @@ class TestExceptionHierarchy:
     """Tests for exception hierarchy"""
 
     def test_exception_inheritance(self):
-        """Test that all custom exceptions inherit from KrakenAPIError"""
-        assert issubclass(KrakenAuthenticationError, KrakenAPIError)
-        assert issubclass(KrakenRequestError, KrakenAPIError)
-        assert issubclass(KrakenResponseError, KrakenAPIError)
+        """Test that KrakenAPIError inherits from Exception"""
+        assert issubclass(KrakenAPIError, Exception)
 
     def test_exception_instantiation(self):
-        """Test that exceptions can be instantiated with messages"""
+        """Test that KrakenAPIError can be instantiated with messages"""
         exc = KrakenAPIError("test message")
         assert str(exc) == "test message"
-
-        exc = KrakenAuthenticationError("auth failed")
-        assert str(exc) == "auth failed"
-
-        exc = KrakenRequestError("request failed")
-        assert str(exc) == "request failed"
-
-        exc = KrakenResponseError("response error")
-        assert str(exc) == "response error"

@@ -7,7 +7,6 @@ from unittest.mock import AsyncMock, MagicMock, call, patch
 import pytest
 from websockets.exceptions import WebSocketException
 
-from kraken.exceptions import KrakenAPIError, KrakenRequestError, KrakenResponseError
 from kraken.websocket import KrakenClientWS, KrakenSocketConnection
 
 
@@ -219,12 +218,10 @@ class TestKrakenSocketConnection:
                 # Wait for message processing
                 await asyncio.sleep(0.1)
 
-                # Verify KrakenRequestError was logged
+                # Verify error was logged
                 assert mock_logger.error.called
                 error_msg = str(mock_logger.error.call_args[0][0])
                 assert "Failed to decode message" in error_msg
-                # Verify the error is wrapped in KrakenRequestError
-                # (the actual exception object is created but logged as string)
 
                 # Callback should not be called with invalid JSON
                 mock_async_callback.assert_not_called()
@@ -264,12 +261,10 @@ class TestKrakenSocketConnection:
                 # Wait for message processing
                 await asyncio.sleep(0.1)
 
-                # Verify KrakenRequestError was logged
+                # Verify error was logged
                 assert mock_logger.error.called
                 error_msg = str(mock_logger.error.call_args[0][0])
                 assert "Error in callback" in error_msg
-                # Verify the error is wrapped in KrakenRequestError
-                # (the actual exception object is created but logged as string)
 
                 # Clean up
                 await conn.disconnect()
@@ -346,7 +341,7 @@ class TestKrakenSocketConnection:
                 # Wait for all retry attempts
                 await asyncio.sleep(0.5)
 
-                # Verify KrakenResponseError was logged
+                # Verify error was logged
                 assert mock_logger.error.called
                 error_calls = [
                     call
@@ -354,9 +349,8 @@ class TestKrakenSocketConnection:
                     if "Max reconnection retries" in str(call)
                 ]
                 assert len(error_calls) > 0
-                # Verify the error message contains the KrakenResponseError text
 
-                # Verify callback was called with error message containing KrakenResponseError
+                # Verify callback was called with error message
                 error_call_found = False
                 for call_args in mock_async_callback.call_args_list:
                     payload = call_args[0][0]

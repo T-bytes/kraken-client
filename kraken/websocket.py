@@ -6,8 +6,6 @@ from typing import Callable, Dict, Optional
 from websockets.asyncio.client import ClientConnection, connect
 from websockets.exceptions import WebSocketException
 
-from kraken.exceptions import KrakenAPIError, KrakenRequestError, KrakenResponseError
-
 logger = logging.getLogger(__name__)
 
 
@@ -64,8 +62,7 @@ class KrakenSocketConnection:
                             payload_obj = json.loads(message)
                             await self._handle_message(payload_obj)
                         except json.JSONDecodeError as e:
-                            error = KrakenRequestError(f"Failed to decode message: {e}")
-                            logger.error(str(error))
+                            logger.error(f"Failed to decode message: {e}")
                         except Exception as e:
                             logger.error(f"Error handling message: {e}")
 
@@ -79,10 +76,9 @@ class KrakenSocketConnection:
                 logger.info("Connection task cancelled")
                 break
             except Exception as e:
-                error = KrakenAPIError(f"Unexpected error: {e}")
-                logger.error(str(error))
+                logger.error(f"Unexpected error: {e}")
                 if self._should_run:
-                    await self._handle_reconnection(error)
+                    await self._handle_reconnection(e)
                 else:
                     break
 
@@ -97,19 +93,16 @@ class KrakenSocketConnection:
                 loop = asyncio.get_event_loop()
                 await loop.run_in_executor(None, self.callback, payload_obj)
         except Exception as e:
-            error = KrakenRequestError(f"Error in callback: {e}")
-            logger.error(str(error))
+            logger.error(f"Error in callback: {e}")
 
     async def _handle_reconnection(self, error: Exception):
         """Handle reconnection with exponential backoff"""
         self._retries += 1
 
         if self._retries > self.max_retries:
-            reconnect_error = KrakenResponseError(
-                f"Max reconnection retries ({self.max_retries}) reached"
-            )
-            logger.error(str(reconnect_error))
-            error_payload = {"e": "error", "m": str(reconnect_error)}
+            error_msg = f"Max reconnection retries ({self.max_retries}) reached"
+            logger.error(error_msg)
+            error_payload = {"e": "error", "m": error_msg}
             await self._handle_message(error_payload)
             self._should_run = False
             return
