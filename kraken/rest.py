@@ -49,10 +49,10 @@ class KrakenEndpoint(Enum):
 
     @property
     def channels(self) -> set:
-        """Get the set of available channels for this API type
+        """Get the set of available channels for this API type.
 
         Returns:
-            set: Set of channel/endpoint names available for this API type
+            Set of channel/endpoint names available for this API type
         """
         _channels = {
             KrakenEndpoint.PUBLIC: {
@@ -125,20 +125,20 @@ class KrakenEndpoint(Enum):
 
     @property
     def path(self) -> str:
-        """Get the API path prefix for this type
+        """Get the API path prefix for this type.
 
         Returns:
-            str: API path prefix (i.e., "/0/public/" or "/0/private/")
+            API path prefix (i.e., "/0/public/" or "/0/private/")
         """
         if self == KrakenEndpoint.PUBLIC:
             return "/0/public/"
         return "/0/private/"
 
     def is_private(self) -> bool:
-        """Check if this API type requires authentication
+        """Check if this API type requires authentication.
 
         Returns:
-            bool: True if authentication is required, False otherwise
+            True if authentication is required, False otherwise
         """
         return self != KrakenEndpoint.PUBLIC
 
@@ -167,14 +167,14 @@ class KrakenClientREST:
     def __init__(
         self, api_key: Optional[str] = None, api_secret: Optional[str] = None, timeout: int = 30
     ):
-        """Initialize the Kraken REST client
+        """Initialize the Kraken REST client.
 
-        Parameters:
-            api_key (str, optional): API key for authentication.
-                If not provided, reads from KRAKEN_API_KEY environment variable
-            api_secret (str, optional): API secret for authentication.
-                If not provided, reads from KRAKEN_API_SECRET environment variable
-            timeout (int, optional): Request timeout in seconds. Default is 30
+        Args:
+            api_key: API key for authentication. If not provided, reads from
+                KRAKEN_API_KEY environment variable
+            api_secret: API secret for authentication. If not provided, reads from
+                KRAKEN_API_SECRET environment variable
+            timeout: Request timeout in seconds. Default is 30
 
         Raises:
             ValueError: If API secret format is invalid
@@ -197,13 +197,13 @@ class KrakenClientREST:
         logger.info("Kraken REST client initialized")
 
     def _get_api_type(self, method: str) -> KrakenEndpoint:
-        """Determine the API type for a given method
+        """Determine the API type for a given method.
 
-        Parameters:
-            method (str): API method/endpoint name
+        Args:
+            method: API method/endpoint name
 
         Returns:
-            APIType: The type of API endpoint
+            The type of API endpoint
 
         Raises:
             ValueError: If method is not found in any API type
@@ -215,15 +215,15 @@ class KrakenClientREST:
         raise ValueError(f"Unknown API method: {method}")
 
     def _sign_request(self, url_path: str, data: Dict[str, Any], nonce: str) -> str:
-        """Generate signature for authenticated requests
+        """Generate signature for authenticated requests.
 
-        Parameters:
-            url_path (str): Full URL path (e.g., "/0/private/Balance")
-            data (Dict[str, Any]): Request parameters including nonce
-            nonce (str): Unique nonce for this request
+        Args:
+            url_path: Full URL path (e.g., "/0/private/Balance")
+            data: Request parameters including nonce
+            nonce: Unique nonce for this request
 
         Returns:
-            str: Base64-encoded HMAC-SHA512 signature
+            Base64-encoded HMAC-SHA512 signature
 
         Raises:
             ValueError: If API secret is not configured
@@ -246,15 +246,15 @@ class KrakenClientREST:
     def _request(
         self, method: str, api_type: KrakenEndpoint, params: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        """Internal method to make HTTP requests to Kraken API
+        """Internal method to make HTTP requests to Kraken API.
 
-        Parameters:
-            method (str): API method/endpoint name
-            api_type (APIType): Type of API endpoint
-            params (Dict[str, Any], optional): Request parameters
+        Args:
+            method: API method/endpoint name
+            api_type: Type of API endpoint
+            params: Request parameters
 
         Returns:
-            Dict[str, Any]: Parsed JSON response from the API
+            Parsed JSON response from the API
 
         Raises:
             ValueError: If authentication is required but credentials missing, or JSON parsing fails
@@ -333,17 +333,17 @@ class KrakenClientREST:
         return data
 
     def request(self, method: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Make a request to the Kraken API
+        """Make a request to the Kraken API.
 
         This is the main public method for interacting with the API.
         It automatically determines the endpoint type and handles authentication.
 
-        Parameters:
-            method (str): API method/endpoint name (e.g., "Time", "Balance", "AddOrder")
-            params (Dict[str, Any], optional): Request parameters
+        Args:
+            method: API method/endpoint name (e.g., "Time", "Balance", "AddOrder")
+            params: Request parameters
 
         Returns:
-            Dict[str, Any]: API response data
+            API response data
 
         Raises:
             ValueError: If the method is unknown or authentication fails
@@ -361,40 +361,40 @@ class KrakenClientREST:
         return self._request(method, api_type, params)
 
     def get(self, method: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Convenience method for GET requests (typically public endpoints)
+        """Convenience method for GET requests (typically public endpoints).
 
-        Parameters:
-            method (str): API method/endpoint name
-            params (Dict[str, Any], optional): Query parameters
+        Args:
+            method: API method/endpoint name
+            params: Query parameters
 
         Returns:
-            Dict[str, Any]: API response data
+            API response data
         """
         return self.request(method, params)
 
     def post(self, method: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Convenience method for POST requests (typically private endpoints)
+        """Convenience method for POST requests (typically private endpoints).
 
-        Parameters:
-            method (str): API method/endpoint name
-            params (Dict[str, Any], optional): POST parameters
+        Args:
+            method: API method/endpoint name
+            params: POST parameters
 
         Returns:
-            Dict[str, Any]: API response data
+            API response data
         """
         return self.request(method, params)
 
     def close(self):
-        """Close the HTTP session and cleanup resources"""
+        """Close the HTTP session and cleanup resources."""
         self.session.close()
         logger.info("Kraken REST client closed")
 
     def __enter__(self):
-        """Context manager entry"""
+        """Context manager entry."""
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        """Context manager exit"""
+        """Context manager exit."""
         self.close()
         return False
 
@@ -432,14 +432,14 @@ class KrakenClientAsyncREST:
     def __init__(
         self, api_key: Optional[str] = None, api_secret: Optional[str] = None, timeout: int = 30
     ):
-        """Initialize the async Kraken REST client
+        """Initialize the async Kraken REST client.
 
-        Parameters:
-            api_key (str, optional): API key for authentication.
-                If not provided, reads from KRAKEN_API_KEY environment variable
-            api_secret (str, optional): API secret for authentication.
-                If not provided, reads from KRAKEN_API_SECRET environment variable
-            timeout (int, optional): Request timeout in seconds. Default is 30
+        Args:
+            api_key: API key for authentication. If not provided, reads from
+                KRAKEN_API_KEY environment variable
+            api_secret: API secret for authentication. If not provided, reads from
+                KRAKEN_API_SECRET environment variable
+            timeout: Request timeout in seconds. Default is 30
 
         Raises:
             ValueError: If API secret format is invalid
@@ -461,13 +461,13 @@ class KrakenClientAsyncREST:
         logger.info("Kraken async REST client initialized")
 
     def _get_api_type(self, method: str) -> KrakenEndpoint:
-        """Determine the API type for a given method
+        """Determine the API type for a given method.
 
-        Parameters:
-            method (str): API method/endpoint name
+        Args:
+            method: API method/endpoint name
 
         Returns:
-            APIType: The type of API endpoint
+            The type of API endpoint
 
         Raises:
             ValueError: If method is not found in any API type
@@ -479,15 +479,15 @@ class KrakenClientAsyncREST:
         raise ValueError(f"Unknown API method: {method}")
 
     def _sign_request(self, url_path: str, data: Dict[str, Any], nonce: str) -> str:
-        """Generate signature for authenticated requests
+        """Generate signature for authenticated requests.
 
-        Parameters:
-            url_path (str): Full URL path (e.g., "/0/private/Balance")
-            data (Dict[str, Any]): Request parameters including nonce
-            nonce (str): Unique nonce for this request
+        Args:
+            url_path: Full URL path (e.g., "/0/private/Balance")
+            data: Request parameters including nonce
+            nonce: Unique nonce for this request
 
         Returns:
-            str: Base64-encoded HMAC-SHA512 signature
+            Base64-encoded HMAC-SHA512 signature
 
         Raises:
             ValueError: If API secret is not configured
@@ -510,15 +510,15 @@ class KrakenClientAsyncREST:
     async def _request(
         self, method: str, api_type: KrakenEndpoint, params: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        """Internal method to make async HTTP requests to Kraken API
+        """Internal method to make async HTTP requests to Kraken API.
 
-        Parameters:
-            method (str): API method/endpoint name
-            api_type (APIType): Type of API endpoint
-            params (Dict[str, Any], optional): Request parameters
+        Args:
+            method: API method/endpoint name
+            api_type: Type of API endpoint
+            params: Request parameters
 
         Returns:
-            Dict[str, Any]: Parsed JSON response from the API
+            Parsed JSON response from the API
 
         Raises:
             RuntimeError: If client is not initialized
@@ -603,17 +603,17 @@ class KrakenClientAsyncREST:
     async def request(
         self, method: str, params: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        """Make an async request to the Kraken API
+        """Make an async request to the Kraken API.
 
         This is the main public method for interacting with the API.
         It automatically determines the endpoint type and handles authentication.
 
-        Parameters:
-            method (str): API method/endpoint name (e.g., "Time", "Balance", "AddOrder")
-            params (Dict[str, Any], optional): Request parameters
+        Args:
+            method: API method/endpoint name (e.g., "Time", "Balance", "AddOrder")
+            params: Request parameters
 
         Returns:
-            Dict[str, Any]: API response data
+            API response data
 
         Raises:
             ValueError: If the method is unknown or authentication fails
@@ -631,42 +631,42 @@ class KrakenClientAsyncREST:
         return await self._request(method, api_type, params)
 
     async def get(self, method: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Convenience method for GET requests (typically public endpoints)
+        """Convenience method for GET requests (typically public endpoints).
 
-        Parameters:
-            method (str): API method/endpoint name
-            params (Dict[str, Any], optional): Query parameters
+        Args:
+            method: API method/endpoint name
+            params: Query parameters
 
         Returns:
-            Dict[str, Any]: API response data
+            API response data
         """
         return await self.request(method, params)
 
     async def post(self, method: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Convenience method for POST requests (typically private endpoints)
+        """Convenience method for POST requests (typically private endpoints).
 
-        Parameters:
-            method (str): API method/endpoint name
-            params (Dict[str, Any], optional): POST parameters
+        Args:
+            method: API method/endpoint name
+            params: POST parameters
 
         Returns:
-            Dict[str, Any]: API response data
+            API response data
         """
         return await self.request(method, params)
 
     async def close(self):
-        """Close the HTTP client and cleanup resources"""
+        """Close the HTTP client and cleanup resources."""
         if self.client:
             await self.client.aclose()
             self.client = None
         logger.info("Kraken async REST client closed")
 
     async def __aenter__(self):
-        """Async context manager entry"""
+        """Async context manager entry."""
         self.client = httpx.AsyncClient(headers={"User-Agent": self.USER_AGENT})
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        """Async context manager exit"""
+        """Async context manager exit."""
         await self.close()
         return False
