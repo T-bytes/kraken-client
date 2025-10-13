@@ -34,7 +34,7 @@ from .exceptions import KrakenAPIError
 logger = logging.getLogger(__name__)
 
 
-class APIType(Enum):
+class KrakenEndpoint(Enum):
     """Enumeration of Kraken API endpoint types
 
     Each type corresponds to a different category of API endpoints
@@ -55,7 +55,7 @@ class APIType(Enum):
             set: Set of channel/endpoint names available for this API type
         """
         _channels = {
-            APIType.PUBLIC: {
+            KrakenEndpoint.PUBLIC: {
                 "Time",
                 "Assets",
                 "AssetPairs",
@@ -66,7 +66,7 @@ class APIType(Enum):
                 "Spread",
                 "SystemStatus",
             },
-            APIType.PRIVATE: {
+            KrakenEndpoint.PRIVATE: {
                 "Balance",
                 "BalanceEx",
                 "TradeBalance",
@@ -87,7 +87,7 @@ class APIType(Enum):
                 "CreateSubaccount",
                 "AccountTransfer",
             },
-            APIType.TRADING: {
+            KrakenEndpoint.TRADING: {
                 "AddOrder",
                 "AddOrderBatch",
                 "EditOrder",
@@ -96,7 +96,7 @@ class APIType(Enum):
                 "CancelAll",
                 "CancelAllOrdersAfter",
             },
-            APIType.FUNDING: {
+            KrakenEndpoint.FUNDING: {
                 "DepositMethods",
                 "DepositAddresses",
                 "DepositStatus",
@@ -106,7 +106,7 @@ class APIType(Enum):
                 "WithdrawCancel",
                 "WalletTransfer",
             },
-            APIType.STAKING: {
+            KrakenEndpoint.STAKING: {
                 "Earn/Strategies",
                 "Earn/Allocations",
                 "Earn/Allocate",
@@ -130,7 +130,7 @@ class APIType(Enum):
         Returns:
             str: API path prefix (i.e., "/0/public/" or "/0/private/")
         """
-        if self == APIType.PUBLIC:
+        if self == KrakenEndpoint.PUBLIC:
             return "/0/public/"
         return "/0/private/"
 
@@ -140,7 +140,7 @@ class APIType(Enum):
         Returns:
             bool: True if authentication is required, False otherwise
         """
-        return self != APIType.PUBLIC
+        return self != KrakenEndpoint.PUBLIC
 
 
 class KrakenClientREST:
@@ -196,7 +196,7 @@ class KrakenClientREST:
 
         logger.info("Kraken REST client initialized")
 
-    def _get_api_type(self, method: str) -> APIType:
+    def _get_api_type(self, method: str) -> KrakenEndpoint:
         """Determine the API type for a given method
 
         Parameters:
@@ -208,7 +208,7 @@ class KrakenClientREST:
         Raises:
             ValueError: If method is not found in any API type
         """
-        for api_type in APIType:
+        for api_type in KrakenEndpoint:
             if method in api_type.channels:
                 return api_type
 
@@ -244,7 +244,7 @@ class KrakenClientREST:
         return base64.b64encode(signature.digest()).decode()
 
     def _request(
-        self, method: str, api_type: APIType, params: Optional[Dict[str, Any]] = None
+        self, method: str, api_type: KrakenEndpoint, params: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """Internal method to make HTTP requests to Kraken API
 
@@ -460,7 +460,7 @@ class KrakenClientAsyncREST:
 
         logger.info("Kraken async REST client initialized")
 
-    def _get_api_type(self, method: str) -> APIType:
+    def _get_api_type(self, method: str) -> KrakenEndpoint:
         """Determine the API type for a given method
 
         Parameters:
@@ -472,7 +472,7 @@ class KrakenClientAsyncREST:
         Raises:
             ValueError: If method is not found in any API type
         """
-        for api_type in APIType:
+        for api_type in KrakenEndpoint:
             if method in api_type.channels:
                 return api_type
 
@@ -508,7 +508,7 @@ class KrakenClientAsyncREST:
         return base64.b64encode(signature.digest()).decode()
 
     async def _request(
-        self, method: str, api_type: APIType, params: Optional[Dict[str, Any]] = None
+        self, method: str, api_type: KrakenEndpoint, params: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """Internal method to make async HTTP requests to Kraken API
 
