@@ -18,7 +18,8 @@ dependencies = [
 [dependency-groups]
 dev = [
   "pytest",
-  "pytest-asyncio"
+  "pytest-asyncio",
+  "pytest-cov"
 ]
 lint = [
   "ruff"
@@ -72,3 +73,12 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+
+[tool.coverage.run]
+source = ["kraken"]
+omit = ["tests/*"]
+
+[tool.coverage.report]
+precision = 2
+show_missing = true
+skip_covered = false
