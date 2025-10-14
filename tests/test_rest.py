@@ -272,6 +272,14 @@ class TestKrakenClientRESTMethods:
             client_no_auth.request("Time")
 
     @patch("kraken.rest.requests.Session.get")
+    def test_request_generic_exception(self, mock_get, client_no_auth):
+        """Test generic request exception"""
+        mock_get.side_effect = requests.exceptions.RequestException("Generic error")
+
+        with pytest.raises(requests.exceptions.RequestException):
+            client_no_auth.request("Time")
+
+    @patch("kraken.rest.requests.Session.get")
     def test_request_invalid_json(self, mock_get, client_no_auth):
         """Test invalid JSON response"""
         mock_response = Mock()
@@ -340,3 +348,296 @@ class TestExceptionHierarchy:
         """Test that KrakenAPIError can be instantiated with messages"""
         exc = KrakenAPIError("test message")
         assert str(exc) == "test message"
+
+
+class TestKrakenClientAsyncRESTInitialization:
+    """Tests for KrakenClientAsyncREST initialization"""
+
+    @pytest.mark.asyncio
+    async def test_init_with_credentials(self):
+        """Test initialization with explicit credentials"""
+        from kraken.rest import KrakenClientAsyncREST
+
+        api_key = "test_key"
+        api_secret = base64.b64encode(b"test_secret").decode()
+
+        client = KrakenClientAsyncREST(api_key=api_key, api_secret=api_secret)
+
+        assert client.api_key == api_key
+        assert client.api_secret == b"test_secret"
+        assert client.timeout == 30
+        assert client.client is None  # Not initialized until context manager
+
+    @pytest.mark.asyncio
+    async def test_init_without_credentials(self):
+        """Test initialization without credentials"""
+        from kraken.rest import KrakenClientAsyncREST
+
+        client = KrakenClientAsyncREST()
+
+        # Should not raise error, credentials are optional
+        assert client.api_key is None or isinstance(client.api_key, str)
+        assert client.client is None
+
+    @pytest.mark.asyncio
+    async def test_init_with_invalid_secret(self):
+        """Test initialization with invalid base64 secret"""
+        from kraken.rest import KrakenClientAsyncREST
+
+        with pytest.raises(ValueError):
+            KrakenClientAsyncREST(api_key="test", api_secret="invalid_base64!@#$%")
+
+    @pytest.mark.asyncio
+    async def test_init_custom_timeout(self):
+        """Test initialization with custom timeout"""
+        from kraken.rest import KrakenClientAsyncREST
+
+        client = KrakenClientAsyncREST(timeout=60)
+        assert client.timeout == 60
+
+    @pytest.mark.asyncio
+    async def test_context_manager(self):
+        """Test that async client works as context manager"""
+        import httpx
+
+        from kraken.rest import KrakenClientAsyncREST
+
+        async with KrakenClientAsyncREST() as client:
+            assert isinstance(client, KrakenClientAsyncREST)
+            assert isinstance(client.client, httpx.AsyncClient)
+
+        # Client should be closed after exiting context
+        assert client.client is None
+
+
+class TestKrakenClientAsyncRESTMethods:
+    """Tests for KrakenClientAsyncREST methods"""
+
+    @pytest.fixture
+    def async_client(self):
+        """Create an async client instance for testing"""
+        from kraken.rest import KrakenClientAsyncREST
+
+        api_key = "test_key"
+        api_secret = base64.b64encode(b"test_secret").decode()
+        return KrakenClientAsyncREST(api_key=api_key, api_secret=api_secret)
+
+    @pytest.fixture
+    def async_client_no_auth(self):
+        """Create an async client instance without authentication"""
+        from kraken.rest import KrakenClientAsyncREST
+
+        return KrakenClientAsyncREST()
+
+    @pytest.mark.asyncio
+    async def test_request_not_initialized(self, async_client_no_auth):
+        """Test RuntimeError when client not initialized"""
+        with pytest.raises(RuntimeError, match="Client not initialized"):
+            await async_client_no_auth.request("Time")
+
+    @pytest.mark.asyncio
+    async def test_get_api_type_unknown(self, async_client_no_auth):
+        """Test _get_api_type with unknown method"""
+        with pytest.raises(ValueError, match="Unknown API method"):
+            async_client_no_auth._get_api_type("InvalidMethod")
+
+    @pytest.mark.asyncio
+    async def test_sign_request_without_secret(self, async_client_no_auth):
+        """Test request signing without API secret"""
+        with pytest.raises(ValueError, match="API secret required"):
+            async_client_no_auth._sign_request("/0/private/Balance", {}, "123")
+
+    @pytest.mark.asyncio
+    async def test_request_public_endpoint(self, async_client_no_auth):
+        """Test making a request to public endpoint"""
+        import httpx
+
+        with patch("httpx.AsyncClient.get") as mock_get:
+            mock_response = Mock()
+            mock_response.json.return_value = {"error": [], "result": {"unixtime": 1234567890}}
+            mock_response.raise_for_status = Mock()
+            mock_get.return_value = mock_response
+
+            async with async_client_no_auth as client:
+                result = await client.request("Time")
+
+            assert result["error"] == []
+            assert "result" in result
+            mock_get.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_request_private_endpoint(self, async_client):
+        """Test making a request to private endpoint"""
+        with patch("httpx.AsyncClient.post") as mock_post:
+            mock_response = Mock()
+            mock_response.json.return_value = {"error": [], "result": {"balance": "1000"}}
+            mock_response.raise_for_status = Mock()
+            mock_post.return_value = mock_response
+
+            async with async_client as client:
+                result = await client.request("Balance")
+
+            assert result["error"] == []
+            assert "result" in result
+            mock_post.assert_called_once()
+
+            # Verify authentication headers were added
+            call_kwargs = mock_post.call_args[1]
+            assert "headers" in call_kwargs
+            assert "API-Key" in call_kwargs["headers"]
+            assert "API-Sign" in call_kwargs["headers"]
+
+    @pytest.mark.asyncio
+    async def test_request_private_without_auth(self, async_client_no_auth):
+        """Test making a private request without credentials"""
+        async with async_client_no_auth as client:
+            with pytest.raises(ValueError, match="API key and secret required"):
+                await client.request("Balance")
+
+    @pytest.mark.asyncio
+    async def test_request_with_params(self, async_client_no_auth):
+        """Test request with parameters"""
+        with patch("httpx.AsyncClient.get") as mock_get:
+            mock_response = Mock()
+            mock_response.json.return_value = {"error": [], "result": {}}
+            mock_response.raise_for_status = Mock()
+            mock_get.return_value = mock_response
+
+            async with async_client_no_auth as client:
+                await client.request("Ticker", params={"pair": "XBTUSD"})
+
+            call_kwargs = mock_get.call_args[1]
+            assert "params" in call_kwargs
+            assert call_kwargs["params"]["pair"] == "XBTUSD"
+
+    @pytest.mark.asyncio
+    async def test_request_timeout(self, async_client_no_auth):
+        """Test request timeout"""
+        import httpx
+
+        with patch("httpx.AsyncClient.get") as mock_get:
+            mock_get.side_effect = httpx.TimeoutException("Request timeout")
+
+            async with async_client_no_auth as client:
+                with pytest.raises(httpx.TimeoutException):
+                    await client.request("Time")
+
+    @pytest.mark.asyncio
+    async def test_request_connection_error(self, async_client_no_auth):
+        """Test connection error"""
+        import httpx
+
+        with patch("httpx.AsyncClient.get") as mock_get:
+            mock_get.side_effect = httpx.ConnectError("Connection failed")
+
+            async with async_client_no_auth as client:
+                with pytest.raises(httpx.ConnectError):
+                    await client.request("Time")
+
+    @pytest.mark.asyncio
+    async def test_request_http_error(self, async_client_no_auth):
+        """Test HTTP error (4xx, 5xx)"""
+        import httpx
+
+        with patch("httpx.AsyncClient.get") as mock_get:
+            mock_response = Mock()
+            mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
+                "404", request=Mock(), response=Mock()
+            )
+            mock_get.return_value = mock_response
+
+            async with async_client_no_auth as client:
+                with pytest.raises(httpx.HTTPStatusError):
+                    await client.request("Time")
+
+    @pytest.mark.asyncio
+    async def test_request_generic_exception(self, async_client_no_auth):
+        """Test generic request exception"""
+        import httpx
+
+        with patch("httpx.AsyncClient.get") as mock_get:
+            mock_get.side_effect = httpx.RequestError("Generic error")
+
+            async with async_client_no_auth as client:
+                with pytest.raises(httpx.RequestError):
+                    await client.request("Time")
+
+    @pytest.mark.asyncio
+    async def test_request_invalid_json(self, async_client_no_auth):
+        """Test invalid JSON response"""
+        with patch("httpx.AsyncClient.get") as mock_get:
+            mock_response = Mock()
+            mock_response.json.side_effect = ValueError("Invalid JSON")
+            mock_response.raise_for_status = Mock()
+            mock_get.return_value = mock_response
+
+            async with async_client_no_auth as client:
+                with pytest.raises(ValueError, match="Invalid JSON response"):
+                    await client.request("Time")
+
+    @pytest.mark.asyncio
+    async def test_request_api_error(self, async_client_no_auth):
+        """Test API error in response"""
+        with patch("httpx.AsyncClient.get") as mock_get:
+            mock_response = Mock()
+            mock_response.json.return_value = {"error": ["EGeneral:Invalid arguments"]}
+            mock_response.raise_for_status = Mock()
+            mock_get.return_value = mock_response
+
+            async with async_client_no_auth as client:
+                with pytest.raises(KrakenAPIError, match="API error"):
+                    await client.request("Time")
+
+    @pytest.mark.asyncio
+    async def test_get_method(self, async_client_no_auth):
+        """Test get convenience method"""
+        with patch("httpx.AsyncClient.get") as mock_get:
+            mock_response = Mock()
+            mock_response.json.return_value = {"error": [], "result": {}}
+            mock_response.raise_for_status = Mock()
+            mock_get.return_value = mock_response
+
+            async with async_client_no_auth as client:
+                result = await client.get("Time")
+
+            assert result["error"] == []
+            mock_get.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_post_method(self, async_client):
+        """Test post convenience method"""
+        with patch("httpx.AsyncClient.post") as mock_post:
+            mock_response = Mock()
+            mock_response.json.return_value = {"error": [], "result": {}}
+            mock_response.raise_for_status = Mock()
+            mock_post.return_value = mock_response
+
+            async with async_client as client:
+                result = await client.post("Balance")
+
+            assert result["error"] == []
+            mock_post.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_close(self, async_client):
+        """Test closing the async client"""
+        from unittest.mock import AsyncMock
+
+        import httpx
+
+        async with async_client:
+            pass  # Client initialized
+
+        # Should already be closed by context manager
+        assert async_client.client is None
+
+        # Test explicit close
+        mock_client = Mock(spec=httpx.AsyncClient)
+        aclose_mock = AsyncMock()
+        mock_client.aclose = aclose_mock
+        async_client.client = mock_client
+
+        await async_client.close()
+
+        aclose_mock.assert_called_once()
+        assert async_client.client is None

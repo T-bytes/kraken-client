@@ -421,6 +421,50 @@ class TestKrakenSocketAsyncConnection:
             assert conn._task is None or conn._task.done()
 
     @pytest.mark.asyncio
+    async def test_disconnect_with_active_task_cancellation(self, mock_callback):
+        """Test disconnect properly cancels active task (covers lines 170-171)"""
+        url = "wss://test.example.com"
+        payload = {}
+
+        mock_ws = AsyncMock()
+        mock_ws.closed = False
+        mock_ws.close = AsyncMock()
+        mock_ws.send = AsyncMock()
+
+        # Create a long-running async iterator that won't finish naturally
+        async def long_running_iterator(self):
+            try:
+                while True:
+                    await asyncio.sleep(0.1)
+                    yield json.dumps({"test": "data"})
+            except asyncio.CancelledError:
+                # This will be raised when task is cancelled
+                raise
+
+        mock_ws.__aenter__ = AsyncMock(return_value=mock_ws)
+        mock_ws.__aexit__ = AsyncMock(return_value=None)
+        mock_ws.__aiter__ = long_running_iterator
+
+        conn = KrakenSocketAsyncConnection(url=url, payload=payload, callback=mock_callback)
+
+        with patch("kraken.websockets.connect", return_value=mock_ws):
+            await conn.connect()
+
+            # Wait for task to be fully running
+            await asyncio.sleep(0.05)
+
+            # Verify task is running
+            assert conn._task is not None
+            assert not conn._task.done()
+
+            # Disconnect should cancel the active task
+            await conn.disconnect()
+
+            # Verify task was cancelled and completed
+            assert conn._task.done()
+            assert conn._should_run is False
+
+    @pytest.mark.asyncio
     async def test_is_connected_property(self, mock_callback):
         """Test is_connected property"""
         conn = KrakenSocketAsyncConnection(
@@ -941,6 +985,49 @@ class TestKrakenSocketConnection:
                     c for c in mock_logger.error.call_args_list if "Error in callback" in str(c)
                 ]
                 assert len(error_calls) > 0
+
+    def test_json_decode_error_handling(self, mock_callback):
+        """Test handling of invalid JSON messages (covers lines 505-506)"""
+        url = "wss://test.example.com"
+        payload = {}
+
+        mock_ws = Mock()
+        mock_ws.closed = False
+        mock_ws.send = Mock()
+        mock_ws.close = Mock()
+        messages = ["invalid json {"]
+
+        def mock_iter(self):
+            for msg in messages:
+                yield msg
+
+        mock_ws.__iter__ = mock_iter
+        mock_ws.__enter__ = Mock(return_value=mock_ws)
+        mock_ws.__exit__ = Mock(return_value=None)
+
+        conn = KrakenSocketConnection(url=url, payload=payload, callback=mock_callback)
+
+        with patch("kraken.websockets.sync_connect", return_value=mock_ws):
+            with patch("kraken.websockets.logger") as mock_logger:
+                conn.connect()
+
+                # Wait for message processing
+                time.sleep(0.2)
+
+                # Disconnect
+                conn.disconnect()
+
+                # Verify error was logged
+                assert mock_logger.error.called
+                error_calls = [
+                    c
+                    for c in mock_logger.error.call_args_list
+                    if "Failed to decode message" in str(c)
+                ]
+                assert len(error_calls) > 0
+
+                # Callback should not be called with invalid JSON
+                mock_callback.assert_not_called()
 
     def test_max_time_exceeded(self, mock_callback, sample_error_message):
         """Test that max time limit stops reconnection and sends error"""
