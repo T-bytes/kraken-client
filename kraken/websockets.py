@@ -1,14 +1,18 @@
 import asyncio
 import json
 import logging
+import os
 import threading
 import time
 from typing import Callable, Dict, Optional
 
+import backoff
 from websockets.asyncio.client import ClientConnection, connect
 from websockets.exceptions import WebSocketException
 from websockets.sync.client import ClientConnection as SyncClientConnection
 from websockets.sync.client import connect as sync_connect
+
+from kraken.constants import RETRY_TIME_LIMIT
 
 logger = logging.getLogger(__name__)
 
@@ -25,9 +29,6 @@ class KrakenSocketAsyncConnection:
         url: str,
         payload: dict,
         callback: Callable[[dict], None],
-        initial_delay: float = 0.1,
-        max_delay: float = 20.0,
-        max_retries: int = 30,
     ):
         """Initialize the WebSocket connection manager.
 
@@ -35,21 +36,13 @@ class KrakenSocketAsyncConnection:
             url: WebSocket URL to connect to
             payload: Initial payload to send upon connection
             callback: Function to call when messages are received
-            initial_delay: Initial reconnection delay in seconds
-            max_delay: Maximum reconnection delay in seconds
-            max_retries: Maximum number of reconnection attempts
         """
         self.url = url
         self.payload = payload
         self.callback = callback
-        self.initial_delay = initial_delay
-        self.max_delay = max_delay
-        self.max_retries = max_retries
 
         self._websocket: Optional[ClientConnection] = None
         self._task: Optional[asyncio.Task] = None
-        self._reconnect_delay = initial_delay
-        self._retries = 0
         self._should_run = False
         self._lock = asyncio.Lock()
 
@@ -61,51 +54,87 @@ class KrakenSocketAsyncConnection:
         self._should_run = True
         self._task = asyncio.create_task(self._run())
 
+    def _log_backoff(self, details):
+        """Callback for backoff events to log reconnection attempts.
+
+        Args:
+            details: Dictionary containing backoff information (wait, tries, etc.)
+        """
+        logger.warning(
+            f"Connection lost. Reconnecting in {details['wait']:.1f}s (attempt {details['tries']})"
+        )
+
+    def _log_giveup(self, details):
+        """Callback when backoff gives up after max time.
+
+        Args:
+            details: Dictionary containing backoff information
+        """
+        error_msg = f"Max reconnection time ({RETRY_TIME_LIMIT}s) reached"
+        logger.error(error_msg)
+
     async def _run(self):
         """Main connection loop with automatic reconnection.
 
         Continuously attempts to maintain a WebSocket connection, handling
-        disconnections and reconnections automatically.
+        disconnections and reconnections automatically via backoff decorator.
         """
+        # Create decorated connection function with instance callbacks
+        connect_with_backoff = backoff.on_exception(
+            backoff.expo,
+            (WebSocketException, ConnectionError, OSError),
+            max_time=RETRY_TIME_LIMIT,
+            max_value=20,
+            on_backoff=self._log_backoff,
+            on_giveup=self._log_giveup,
+        )(self._connect_once)
+
         while self._should_run:
             try:
-                async with connect(self.url) as websocket:
-                    self._websocket = websocket
-                    logger.info(f"Connected to {self.url}")
-
-                    # Send initial payload on connection
-                    if self.payload:
-                        await websocket.send(json.dumps(self.payload))
-
-                    # Reset reconnection parameters on successful connection
-                    self._reconnect_delay = self.initial_delay
-                    self._retries = 0
-
-                    # Handle incoming messages
-                    async for message in websocket:
-                        try:
-                            payload_obj = json.loads(message)
-                            await self._handle_message(payload_obj)
-                        except json.JSONDecodeError as e:
-                            logger.error(f"Failed to decode message: {e}")
-                        except Exception as e:
-                            logger.error(f"Error handling message: {e}")
-
+                await connect_with_backoff()
             except (WebSocketException, ConnectionError, OSError) as e:
+                # Backoff gave up after max_time
                 self._websocket = None
                 if self._should_run:
-                    await self._handle_reconnection(e)
-                else:
-                    break
+                    error_msg = f"Connection failed after {RETRY_TIME_LIMIT}s: {e}"
+                    logger.error(error_msg)
+                    error_payload = {"e": "error", "m": error_msg}
+                    await self._handle_message(error_payload)
+                    self._should_run = False
+                break
             except asyncio.CancelledError:
                 logger.info("Connection task cancelled")
                 break
             except Exception as e:
                 logger.error(f"Unexpected error: {e}")
-                if self._should_run:
-                    await self._handle_reconnection(e)
-                else:
+                self._should_run = False
+                break
+
+    async def _connect_once(self):
+        """Establish a single WebSocket connection and handle messages.
+
+        This method is wrapped by backoff decorator in _run(). It will be retried
+        automatically if it raises WebSocketException, ConnectionError, or OSError.
+        """
+        async with connect(self.url) as websocket:
+            self._websocket = websocket
+            logger.info(f"Connected to {self.url}")
+
+            # Send initial payload on connection
+            if self.payload:
+                await websocket.send(json.dumps(self.payload))
+
+            # Handle incoming messages
+            async for message in websocket:
+                if not self._should_run:
                     break
+                try:
+                    payload_obj = json.loads(message)
+                    await self._handle_message(payload_obj)
+                except json.JSONDecodeError as e:
+                    logger.error(f"Failed to decode message: {e}")
+                except Exception as e:
+                    logger.error(f"Error handling message: {e}")
 
     async def _handle_message(self, payload_obj: dict):
         """Handle incoming message by calling the callback.
@@ -123,32 +152,6 @@ class KrakenSocketAsyncConnection:
                 await loop.run_in_executor(None, self.callback, payload_obj)
         except Exception as e:
             logger.error(f"Error in callback: {e}")
-
-    async def _handle_reconnection(self, error: Exception):
-        """Handle reconnection with exponential backoff.
-
-        Args:
-            error: The exception that caused the disconnection
-        """
-        self._retries += 1
-
-        if self._retries > self.max_retries:
-            error_msg = f"Max reconnection retries ({self.max_retries}) reached"
-            logger.error(error_msg)
-            error_payload = {"e": "error", "m": error_msg}
-            await self._handle_message(error_payload)
-            self._should_run = False
-            return
-
-        logger.warning(
-            f"Connection lost ({error}). Reconnecting in {self._reconnect_delay}s "
-            f"(attempt {self._retries}/{self.max_retries})"
-        )
-
-        await asyncio.sleep(self._reconnect_delay)
-
-        # Exponential backoff
-        self._reconnect_delay = min(self._reconnect_delay * 2, self.max_delay)
 
     async def disconnect(self):
         """Gracefully close the WebSocket connection.
@@ -399,9 +402,6 @@ class KrakenSocketConnection:
         url: str,
         payload: dict,
         callback: Callable[[dict], None],
-        initial_delay: float = 0.1,
-        max_delay: float = 20.0,
-        max_retries: int = 30,
     ):
         """Initialize the WebSocket connection manager.
 
@@ -409,21 +409,13 @@ class KrakenSocketConnection:
             url: WebSocket URL to connect to
             payload: Initial payload to send upon connection
             callback: Function to call when messages are received
-            initial_delay: Initial reconnection delay in seconds
-            max_delay: Maximum reconnection delay in seconds
-            max_retries: Maximum number of reconnection attempts
         """
         self.url = url
         self.payload = payload
         self.callback = callback
-        self.initial_delay = initial_delay
-        self.max_delay = max_delay
-        self.max_retries = max_retries
 
         self._websocket: Optional[SyncClientConnection] = None
         self._thread: Optional[threading.Thread] = None
-        self._reconnect_delay = initial_delay
-        self._retries = 0
         self._should_run = False
         self._lock = threading.Lock()
 
@@ -436,48 +428,84 @@ class KrakenSocketConnection:
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
 
+    def _log_backoff(self, details):
+        """Callback for backoff events to log reconnection attempts.
+
+        Args:
+            details: Dictionary containing backoff information (wait, tries, etc.)
+        """
+        logger.warning(
+            f"Connection lost. Reconnecting in {details['wait']:.1f}s (attempt {details['tries']})"
+        )
+
+    def _log_giveup(self, details):
+        """Callback when backoff gives up after max time.
+
+        Args:
+            details: Dictionary containing backoff information
+        """
+        error_msg = f"Max reconnection time ({RETRY_TIME_LIMIT}s) reached"
+        logger.error(error_msg)
+
     def _run(self):
         """Main connection loop with automatic reconnection.
 
         Continuously attempts to maintain a WebSocket connection, handling
-        disconnections and reconnections automatically.
+        disconnections and reconnections automatically via backoff decorator.
         """
+        # Create decorated connection function with instance callbacks
+        connect_with_backoff = backoff.on_exception(
+            backoff.expo,
+            (WebSocketException, ConnectionError, OSError),
+            max_time=RETRY_TIME_LIMIT,
+            max_value=20,
+            on_backoff=self._log_backoff,
+            on_giveup=self._log_giveup,
+        )(self._connect_once)
+
         while self._should_run:
             try:
-                with sync_connect(self.url) as websocket:
-                    self._websocket = websocket
-                    logger.info(f"Connected to {self.url}")
-
-                    # Send initial payload on connection
-                    if self.payload:
-                        websocket.send(json.dumps(self.payload))
-
-                    # Reset reconnection parameters on successful connection
-                    self._reconnect_delay = self.initial_delay
-                    self._retries = 0
-
-                    # Handle incoming messages
-                    for message in websocket:
-                        try:
-                            payload_obj = json.loads(message)
-                            self._handle_message(payload_obj)
-                        except json.JSONDecodeError as e:
-                            logger.error(f"Failed to decode message: {e}")
-                        except Exception as e:
-                            logger.error(f"Error handling message: {e}")
-
+                connect_with_backoff()
             except (WebSocketException, ConnectionError, OSError) as e:
+                # Backoff gave up after max_time
                 self._websocket = None
                 if self._should_run:
-                    self._handle_reconnection(e)
-                else:
-                    break
+                    error_msg = f"Connection failed after {RETRY_TIME_LIMIT}s: {e}"
+                    logger.error(error_msg)
+                    error_payload = {"e": "error", "m": error_msg}
+                    self._handle_message(error_payload)
+                    self._should_run = False
+                break
             except Exception as e:
                 logger.error(f"Unexpected error: {e}")
-                if self._should_run:
-                    self._handle_reconnection(e)
-                else:
+                self._should_run = False
+                break
+
+    def _connect_once(self):
+        """Establish a single WebSocket connection and handle messages.
+
+        This method is wrapped by backoff decorator in _run(). It will be retried
+        automatically if it raises WebSocketException, ConnectionError, or OSError.
+        """
+        with sync_connect(self.url) as websocket:
+            self._websocket = websocket
+            logger.info(f"Connected to {self.url}")
+
+            # Send initial payload on connection
+            if self.payload:
+                websocket.send(json.dumps(self.payload))
+
+            # Handle incoming messages
+            for message in websocket:
+                if not self._should_run:
                     break
+                try:
+                    payload_obj = json.loads(message)
+                    self._handle_message(payload_obj)
+                except json.JSONDecodeError as e:
+                    logger.error(f"Failed to decode message: {e}")
+                except Exception as e:
+                    logger.error(f"Error handling message: {e}")
 
     def _handle_message(self, payload_obj: dict):
         """Handle incoming message by calling the callback.
@@ -489,32 +517,6 @@ class KrakenSocketConnection:
             self.callback(payload_obj)
         except Exception as e:
             logger.error(f"Error in callback: {e}")
-
-    def _handle_reconnection(self, error: Exception):
-        """Handle reconnection with exponential backoff.
-
-        Args:
-            error: The exception that caused the disconnection
-        """
-        self._retries += 1
-
-        if self._retries > self.max_retries:
-            error_msg = f"Max reconnection retries ({self.max_retries}) reached"
-            logger.error(error_msg)
-            error_payload = {"e": "error", "m": error_msg}
-            self._handle_message(error_payload)
-            self._should_run = False
-            return
-
-        logger.warning(
-            f"Connection lost ({error}). Reconnecting in {self._reconnect_delay}s "
-            f"(attempt {self._retries}/{self.max_retries})"
-        )
-
-        time.sleep(self._reconnect_delay)
-
-        # Exponential backoff
-        self._reconnect_delay = min(self._reconnect_delay * 2, self.max_delay)
 
     def disconnect(self):
         """Gracefully close the WebSocket connection.
