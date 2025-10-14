@@ -185,7 +185,6 @@ class TestKrakenSocketAsyncConnection:
             assert mock_callback.call_count == 1
             mock_callback.assert_called_with(sample_ticker_message)
 
-    @pytest.mark.skip(reason="Hangs indefinitely")
     @pytest.mark.asyncio
     async def test_json_decode_error_handling(self, mock_async_callback):
         """Test handling of invalid JSON messages"""
@@ -205,9 +204,26 @@ class TestKrakenSocketAsyncConnection:
         mock_ws.__aexit__ = AsyncMock(return_value=None)
         mock_ws.__aiter__ = mock_aiter
 
+        call_count = [0]
+
+        def mock_connect(*args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return mock_ws
+            else:
+                # On reconnection attempts, return a context manager that blocks
+                blocking_mock = AsyncMock()
+
+                async def blocking_enter(self):
+                    await asyncio.Event().wait()
+
+                blocking_mock.__aenter__ = blocking_enter
+                blocking_mock.__aexit__ = AsyncMock(return_value=None)
+                return blocking_mock
+
         conn = KrakenSocketAsyncConnection(url=url, payload=payload, callback=mock_async_callback)
 
-        with patch("kraken.websockets.connect", return_value=mock_ws):
+        with patch("kraken.websockets.connect", side_effect=mock_connect):
             with patch("kraken.websockets.logger") as mock_logger:
                 await conn.connect()
 
@@ -225,7 +241,6 @@ class TestKrakenSocketAsyncConnection:
                 # Clean up
                 await conn.disconnect()
 
-    @pytest.mark.skip(reason="Hangs indefinitely")
     @pytest.mark.asyncio
     async def test_callback_exception_handling(self, sample_ticker_message):
         """Test handling of exceptions in callback"""
@@ -248,9 +263,26 @@ class TestKrakenSocketAsyncConnection:
         mock_ws.__aexit__ = AsyncMock(return_value=None)
         mock_ws.__aiter__ = mock_aiter
 
+        call_count = [0]
+
+        def mock_connect(*args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return mock_ws
+            else:
+                # On reconnection attempts, return a context manager that blocks
+                blocking_mock = AsyncMock()
+
+                async def blocking_enter(self):
+                    await asyncio.Event().wait()
+
+                blocking_mock.__aenter__ = blocking_enter
+                blocking_mock.__aexit__ = AsyncMock(return_value=None)
+                return blocking_mock
+
         conn = KrakenSocketAsyncConnection(url=url, payload=payload, callback=error_callback)
 
-        with patch("kraken.websockets.connect", return_value=mock_ws):
+        with patch("kraken.websockets.connect", side_effect=mock_connect):
             with patch("kraken.websockets.logger") as mock_logger:
                 await conn.connect()
 
