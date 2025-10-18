@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, Mock, PropertyMock, call, patch
 import pytest
 from websockets.exceptions import WebSocketException
 
-from kraken.websockets import (
+from kraken.ws.client import (
     KrakenClientAsyncWS,
     KrakenClientWS,
     KrakenSocketAsyncConnection,
@@ -111,7 +111,7 @@ class TestKrakenSocketAsyncConnection:
 
         conn = KrakenSocketAsyncConnection(url=url, payload=payload, callback=callback_wrapper)
 
-        with patch("kraken.websockets.connect", side_effect=mock_connect):
+        with patch("kraken.ws.connection.connect", side_effect=mock_connect):
             await conn.connect()
 
             # Wait for message processing with timeout
@@ -171,7 +171,7 @@ class TestKrakenSocketAsyncConnection:
             callback=mock_callback,
         )
 
-        with patch("kraken.websockets.connect", side_effect=mock_connect):
+        with patch("kraken.ws.connection.connect", side_effect=mock_connect):
             await conn.connect()
 
             # Wait for message processing
@@ -223,8 +223,8 @@ class TestKrakenSocketAsyncConnection:
 
         conn = KrakenSocketAsyncConnection(url=url, payload=payload, callback=mock_async_callback)
 
-        with patch("kraken.websockets.connect", side_effect=mock_connect):
-            with patch("kraken.websockets.logger") as mock_logger:
+        with patch("kraken.ws.connection.connect", side_effect=mock_connect):
+            with patch("kraken.ws.connection.logger") as mock_logger:
                 await conn.connect()
 
                 # Wait for message processing
@@ -282,8 +282,8 @@ class TestKrakenSocketAsyncConnection:
 
         conn = KrakenSocketAsyncConnection(url=url, payload=payload, callback=error_callback)
 
-        with patch("kraken.websockets.connect", side_effect=mock_connect):
-            with patch("kraken.websockets.logger") as mock_logger:
+        with patch("kraken.ws.connection.connect", side_effect=mock_connect):
+            with patch("kraken.ws.connection.logger") as mock_logger:
                 await conn.connect()
 
                 # Wait for message processing
@@ -323,8 +323,8 @@ class TestKrakenSocketAsyncConnection:
 
         # Patch RETRY_TIME_LIMIT to prevent long waits
         with patch("kraken.constants.RETRY_TIME_LIMIT", 2):
-            with patch("kraken.websockets.connect", side_effect=mock_connect_with_failure):
-                with patch("kraken.websockets.logger") as mock_logger:
+            with patch("kraken.ws.connection.connect", side_effect=mock_connect_with_failure):
+                with patch("kraken.ws.client.logger") as mock_logger:
                     await conn.connect()
 
                     # Wait for reconnection attempts
@@ -349,11 +349,11 @@ class TestKrakenSocketAsyncConnection:
         )
 
         # Patch RETRY_TIME_LIMIT to a small value for testing
-        with patch("kraken.websockets.RETRY_TIME_LIMIT", 1):
+        with patch("kraken.ws.connection.RETRY_TIME_LIMIT", 1):
             with patch(
-                "kraken.websockets.connect", side_effect=WebSocketException("Connection failed")
+                "kraken.ws.connection.connect", side_effect=WebSocketException("Connection failed")
             ):
-                with patch("kraken.websockets.logger") as mock_logger:
+                with patch("kraken.ws.connection.logger") as mock_logger:
                     await conn.connect()
 
                     # Wait for retry time limit to be exceeded
@@ -407,7 +407,7 @@ class TestKrakenSocketAsyncConnection:
 
         conn = KrakenSocketAsyncConnection(url=url, payload=payload, callback=mock_callback)
 
-        with patch("kraken.websockets.connect", return_value=mock_ws):
+        with patch("kraken.ws.connection.connect", return_value=mock_ws):
             await conn.connect()
 
             # Wait briefly for connection
@@ -447,7 +447,7 @@ class TestKrakenSocketAsyncConnection:
 
         conn = KrakenSocketAsyncConnection(url=url, payload=payload, callback=mock_callback)
 
-        with patch("kraken.websockets.connect", return_value=mock_ws):
+        with patch("kraken.ws.connection.connect", return_value=mock_ws):
             await conn.connect()
 
             # Wait for task to be fully running
@@ -521,7 +521,7 @@ class TestKrakenClientWS:
         mock_connection = AsyncMock()
         mock_connection.connect = AsyncMock()
 
-        with patch("kraken.websockets.KrakenSocketAsyncConnection", return_value=mock_connection):
+        with patch("kraken.ws.client.KrakenSocketAsyncConnection", return_value=mock_connection):
             conn_id = await client.subscribe_public(
                 params=sample_subscription_params, callback=mock_async_callback
             )
@@ -548,7 +548,7 @@ class TestKrakenClientWS:
         mock_connection = AsyncMock()
         mock_connection.connect = AsyncMock()
 
-        with patch("kraken.websockets.KrakenSocketAsyncConnection", return_value=mock_connection):
+        with patch("kraken.ws.client.KrakenSocketAsyncConnection", return_value=mock_connection):
             conn_id = await client.subscribe_public(params=params, callback=mock_async_callback)
 
             # Verify connection ID format (no symbol)
@@ -566,7 +566,7 @@ class TestKrakenClientWS:
         mock_connection.connect = AsyncMock()
 
         with patch(
-            "kraken.websockets.KrakenSocketAsyncConnection", return_value=mock_connection
+            "kraken.ws.client.KrakenSocketAsyncConnection", return_value=mock_connection
         ) as mock_conn_class:
             conn_id = await client.subscribe_private(
                 params=sample_subscription_params, callback=mock_async_callback
@@ -590,14 +590,14 @@ class TestKrakenClientWS:
         mock_connection = AsyncMock()
         mock_connection.connect = AsyncMock()
 
-        with patch("kraken.websockets.KrakenSocketAsyncConnection", return_value=mock_connection):
+        with patch("kraken.ws.client.KrakenSocketAsyncConnection", return_value=mock_connection):
             # First subscription
             conn_id_1 = await client.subscribe_public(
                 params=sample_subscription_params, callback=mock_async_callback
             )
 
             # Duplicate subscription
-            with patch("kraken.websockets.logger") as mock_logger:
+            with patch("kraken.ws.client.logger") as mock_logger:
                 conn_id_2 = await client.subscribe_public(
                     params=sample_subscription_params, callback=mock_async_callback
                 )
@@ -625,7 +625,7 @@ class TestKrakenClientWS:
         mock_connection.connect = AsyncMock()
 
         with patch(
-            "kraken.websockets.KrakenSocketAsyncConnection", return_value=mock_connection
+            "kraken.ws.client.KrakenSocketAsyncConnection", return_value=mock_connection
         ) as mock_conn_class:
             conn_id = await client.request(
                 request=sample_request_params, callback=mock_async_callback, req_id=12345
@@ -654,7 +654,7 @@ class TestKrakenClientWS:
         mock_connection.connect = AsyncMock()
         mock_connection.disconnect = AsyncMock()
 
-        with patch("kraken.websockets.KrakenSocketAsyncConnection", return_value=mock_connection):
+        with patch("kraken.ws.client.KrakenSocketAsyncConnection", return_value=mock_connection):
             # Create connection
             conn_id = await client.subscribe_public(
                 params=sample_subscription_params, callback=mock_async_callback
@@ -675,7 +675,7 @@ class TestKrakenClientWS:
         """Test stopping a non-existent socket connection"""
         client = KrakenClientAsyncWS()
 
-        with patch("kraken.websockets.logger") as mock_logger:
+        with patch("kraken.ws.client.logger") as mock_logger:
             result = await client.stop_socket("nonexistent_id")
 
             # Verify operation failed
@@ -702,7 +702,7 @@ class TestKrakenClientWS:
 
         connections = [mock_connection_1, mock_connection_2]
 
-        with patch("kraken.websockets.KrakenSocketAsyncConnection", side_effect=connections):
+        with patch("kraken.ws.client.KrakenSocketAsyncConnection", side_effect=connections):
             # Create multiple connections
             conn_id_1 = await client.subscribe_public(
                 params={"channel": "ticker", "symbol": ["BTC/USD"]}, callback=mock_async_callback
@@ -741,7 +741,7 @@ class TestKrakenClientWS:
         mock_connection = AsyncMock()
         mock_connection.connect = AsyncMock()
 
-        with patch("kraken.websockets.KrakenSocketAsyncConnection", return_value=mock_connection):
+        with patch("kraken.ws.client.KrakenSocketAsyncConnection", return_value=mock_connection):
             # Initially no connections
             assert client.get_connection_ids() == []
 
@@ -775,7 +775,7 @@ class TestKrakenClientWS:
         # Use PropertyMock for the is_connected property
         type(mock_connection).is_connected = PropertyMock(return_value=True)
 
-        with patch("kraken.websockets.KrakenSocketAsyncConnection", return_value=mock_connection):
+        with patch("kraken.ws.client.KrakenSocketAsyncConnection", return_value=mock_connection):
             # Non-existent connection
             assert client.is_connected("nonexistent_id") is False
 
@@ -805,7 +805,7 @@ class TestKrakenClientWS:
         mock_connection.connect = AsyncMock()
 
         with patch(
-            "kraken.websockets.KrakenSocketAsyncConnection", return_value=mock_connection
+            "kraken.ws.client.KrakenSocketAsyncConnection", return_value=mock_connection
         ) as mock_conn_class:
             conn_id = await client.subscribe_public(
                 params=sample_subscription_params,
@@ -929,7 +929,7 @@ class TestKrakenSocketConnection:
 
         conn = KrakenSocketConnection(url=url, payload=payload, callback=callback_wrapper)
 
-        with patch("kraken.websockets.sync_connect", side_effect=mock_connect):
+        with patch("kraken.ws.connection.sync_connect", side_effect=mock_connect):
             conn.connect()
 
             # Wait for message processing with timeout
@@ -969,8 +969,8 @@ class TestKrakenSocketConnection:
 
         conn = KrakenSocketConnection(url=url, payload=payload, callback=error_callback)
 
-        with patch("kraken.websockets.sync_connect", return_value=mock_ws):
-            with patch("kraken.websockets.logger") as mock_logger:
+        with patch("kraken.ws.connection.sync_connect", return_value=mock_ws):
+            with patch("kraken.ws.connection.logger") as mock_logger:
                 conn.connect()
 
                 # Wait for message processing
@@ -1007,8 +1007,8 @@ class TestKrakenSocketConnection:
 
         conn = KrakenSocketConnection(url=url, payload=payload, callback=mock_callback)
 
-        with patch("kraken.websockets.sync_connect", return_value=mock_ws):
-            with patch("kraken.websockets.logger") as mock_logger:
+        with patch("kraken.ws.connection.sync_connect", return_value=mock_ws):
+            with patch("kraken.ws.connection.logger") as mock_logger:
                 conn.connect()
 
                 # Wait for message processing
@@ -1051,12 +1051,12 @@ class TestKrakenSocketConnection:
         )
 
         # Patch RETRY_TIME_LIMIT to a small value for testing
-        with patch("kraken.websockets.RETRY_TIME_LIMIT", 1):
+        with patch("kraken.ws.connection.RETRY_TIME_LIMIT", 1):
             with patch(
-                "kraken.websockets.sync_connect",
+                "kraken.ws.connection.sync_connect",
                 side_effect=WebSocketException("Connection failed"),
             ):
-                with patch("kraken.websockets.logger") as mock_logger:
+                with patch("kraken.ws.connection.logger") as mock_logger:
                     conn.connect()
 
                     # Wait for retry time limit to be exceeded
@@ -1102,7 +1102,7 @@ class TestKrakenSocketConnection:
 
         conn = KrakenSocketConnection(url=url, payload=payload, callback=mock_callback)
 
-        with patch("kraken.websockets.sync_connect", return_value=mock_ws):
+        with patch("kraken.ws.connection.sync_connect", return_value=mock_ws):
             conn.connect()
 
             # Wait briefly for connection
@@ -1167,7 +1167,7 @@ class TestKrakenClientSyncWS:
         mock_connection = Mock()
         mock_connection.connect = Mock()
 
-        with patch("kraken.websockets.KrakenSocketConnection", return_value=mock_connection):
+        with patch("kraken.ws.client.KrakenSocketConnection", return_value=mock_connection):
             conn_id = client.subscribe_public(
                 params=sample_subscription_params, callback=mock_callback
             )
@@ -1193,7 +1193,7 @@ class TestKrakenClientSyncWS:
         mock_connection = Mock()
         mock_connection.connect = Mock()
 
-        with patch("kraken.websockets.KrakenSocketConnection", return_value=mock_connection):
+        with patch("kraken.ws.client.KrakenSocketConnection", return_value=mock_connection):
             conn_id = client.subscribe_public(params=params, callback=mock_callback)
 
             # Verify connection ID format (no symbol)
@@ -1210,7 +1210,7 @@ class TestKrakenClientSyncWS:
         mock_connection.connect = Mock()
 
         with patch(
-            "kraken.websockets.KrakenSocketConnection", return_value=mock_connection
+            "kraken.ws.client.KrakenSocketConnection", return_value=mock_connection
         ) as mock_conn_class:
             conn_id = client.subscribe_private(
                 params=sample_subscription_params, callback=mock_callback
@@ -1233,14 +1233,14 @@ class TestKrakenClientSyncWS:
         mock_connection = Mock()
         mock_connection.connect = Mock()
 
-        with patch("kraken.websockets.KrakenSocketConnection", return_value=mock_connection):
+        with patch("kraken.ws.client.KrakenSocketConnection", return_value=mock_connection):
             # First subscription
             conn_id_1 = client.subscribe_public(
                 params=sample_subscription_params, callback=mock_callback
             )
 
             # Duplicate subscription
-            with patch("kraken.websockets.logger") as mock_logger:
+            with patch("kraken.ws.client.logger") as mock_logger:
                 conn_id_2 = client.subscribe_public(
                     params=sample_subscription_params, callback=mock_callback
                 )
@@ -1265,7 +1265,7 @@ class TestKrakenClientSyncWS:
         mock_connection.connect = Mock()
 
         with patch(
-            "kraken.websockets.KrakenSocketConnection", return_value=mock_connection
+            "kraken.ws.client.KrakenSocketConnection", return_value=mock_connection
         ) as mock_conn_class:
             conn_id = client.request(
                 request=sample_request_params, callback=mock_callback, req_id=12345
@@ -1293,7 +1293,7 @@ class TestKrakenClientSyncWS:
         mock_connection.connect = Mock()
         mock_connection.disconnect = Mock()
 
-        with patch("kraken.websockets.KrakenSocketConnection", return_value=mock_connection):
+        with patch("kraken.ws.client.KrakenSocketConnection", return_value=mock_connection):
             # Create connection
             conn_id = client.subscribe_public(
                 params=sample_subscription_params, callback=mock_callback
@@ -1313,7 +1313,7 @@ class TestKrakenClientSyncWS:
         """Test stopping a non-existent socket connection"""
         client = KrakenClientWS()
 
-        with patch("kraken.websockets.logger") as mock_logger:
+        with patch("kraken.ws.client.logger") as mock_logger:
             result = client.stop_socket("nonexistent_id")
 
             # Verify operation failed
@@ -1339,7 +1339,7 @@ class TestKrakenClientSyncWS:
 
         connections = [mock_connection_1, mock_connection_2]
 
-        with patch("kraken.websockets.KrakenSocketConnection", side_effect=connections):
+        with patch("kraken.ws.client.KrakenSocketConnection", side_effect=connections):
             # Create multiple connections
             conn_id_1 = client.subscribe_public(
                 params={"channel": "ticker", "symbol": ["BTC/USD"]}, callback=mock_callback
@@ -1376,7 +1376,7 @@ class TestKrakenClientSyncWS:
         mock_connection = Mock()
         mock_connection.connect = Mock()
 
-        with patch("kraken.websockets.KrakenSocketConnection", return_value=mock_connection):
+        with patch("kraken.ws.client.KrakenSocketConnection", return_value=mock_connection):
             # Initially no connections
             assert client.get_connection_ids() == []
 
@@ -1408,7 +1408,7 @@ class TestKrakenClientSyncWS:
         mock_connection.connect = Mock()
         mock_connection.is_connected = True
 
-        with patch("kraken.websockets.KrakenSocketConnection", return_value=mock_connection):
+        with patch("kraken.ws.client.KrakenSocketConnection", return_value=mock_connection):
             # Non-existent connection
             assert client.is_connected("nonexistent_id") is False
 
@@ -1435,7 +1435,7 @@ class TestKrakenClientSyncWS:
         mock_connection.connect = Mock()
 
         with patch(
-            "kraken.websockets.KrakenSocketConnection", return_value=mock_connection
+            "kraken.ws.client.KrakenSocketConnection", return_value=mock_connection
         ) as mock_conn_class:
             conn_id = client.subscribe_public(
                 params=sample_subscription_params,

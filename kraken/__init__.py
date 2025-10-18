@@ -1,8 +1,8 @@
 """Unofficial Python client for the Kraken REST and Websockets (v2) API."""
 
 from kraken.exceptions import KrakenAPIError
-from kraken.rest import KrakenClientAsyncREST, KrakenClientREST, KrakenEndpoint
-from kraken.websockets import KrakenClientAsyncWS, KrakenClientWS
+from kraken.rest import KrakenClientAsyncREST, KrakenClientREST
+from kraken.ws import KrakenClientAsyncWS, KrakenClientWS
 
 __all__ = [
     "KrakenEndpoint",

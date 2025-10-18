@@ -8,7 +8,8 @@ import pytest
 import requests
 
 from kraken.exceptions import KrakenAPIError
-from kraken.rest import KrakenClientREST, KrakenEndpoint
+from kraken.rest.client import KrakenClientREST
+from kraken.rest.endpoint import KrakenEndpoint
 
 
 class TestAPIType:
@@ -191,7 +192,7 @@ class TestKrakenClientRESTMethods:
         with pytest.raises(ValueError, match="API secret required"):
             client_no_auth._sign_request("/0/private/Balance", {}, "123")
 
-    @patch("kraken.rest.requests.Session.get")
+    @patch("kraken.rest.client.requests.Session.get")
     def test_request_public_endpoint(self, mock_get, client_no_auth):
         """Test making a request to public endpoint"""
         mock_response = Mock()
@@ -205,7 +206,7 @@ class TestKrakenClientRESTMethods:
         assert "result" in result
         mock_get.assert_called_once()
 
-    @patch("kraken.rest.requests.Session.post")
+    @patch("kraken.rest.client.requests.Session.post")
     def test_request_private_endpoint(self, mock_post, client):
         """Test making a request to private endpoint"""
         mock_response = Mock()
@@ -227,11 +228,11 @@ class TestKrakenClientRESTMethods:
 
     def test_request_private_without_auth(self, client_no_auth):
         """Test making a private request without credentials"""
-        with patch("kraken.rest.requests.Session.post") as mock_post:
+        with patch("kraken.rest.client.requests.Session.post") as mock_post:
             with pytest.raises(ValueError, match="API key and secret required"):
                 client_no_auth.request("Balance")
 
-    @patch("kraken.rest.requests.Session.get")
+    @patch("kraken.rest.client.requests.Session.get")
     def test_request_with_params(self, mock_get, client_no_auth):
         """Test request with parameters"""
         mock_response = Mock()
@@ -245,7 +246,7 @@ class TestKrakenClientRESTMethods:
         assert "params" in call_kwargs
         assert call_kwargs["params"]["pair"] == "XBTUSD"
 
-    @patch("kraken.rest.requests.Session.get")
+    @patch("kraken.rest.client.requests.Session.get")
     def test_request_timeout(self, mock_get, client_no_auth):
         """Test request timeout"""
         mock_get.side_effect = requests.exceptions.Timeout("Request timeout")
@@ -253,7 +254,7 @@ class TestKrakenClientRESTMethods:
         with pytest.raises(requests.exceptions.Timeout):
             client_no_auth.request("Time")
 
-    @patch("kraken.rest.requests.Session.get")
+    @patch("kraken.rest.client.requests.Session.get")
     def test_request_connection_error(self, mock_get, client_no_auth):
         """Test connection error"""
         mock_get.side_effect = requests.exceptions.ConnectionError("Connection failed")
@@ -261,7 +262,7 @@ class TestKrakenClientRESTMethods:
         with pytest.raises(requests.exceptions.ConnectionError):
             client_no_auth.request("Time")
 
-    @patch("kraken.rest.requests.Session.get")
+    @patch("kraken.rest.client.requests.Session.get")
     def test_request_http_error(self, mock_get, client_no_auth):
         """Test HTTP error (4xx, 5xx)"""
         mock_response = Mock()
@@ -271,7 +272,7 @@ class TestKrakenClientRESTMethods:
         with pytest.raises(requests.exceptions.HTTPError):
             client_no_auth.request("Time")
 
-    @patch("kraken.rest.requests.Session.get")
+    @patch("kraken.rest.client.requests.Session.get")
     def test_request_generic_exception(self, mock_get, client_no_auth):
         """Test generic request exception"""
         mock_get.side_effect = requests.exceptions.RequestException("Generic error")
@@ -279,7 +280,7 @@ class TestKrakenClientRESTMethods:
         with pytest.raises(requests.exceptions.RequestException):
             client_no_auth.request("Time")
 
-    @patch("kraken.rest.requests.Session.get")
+    @patch("kraken.rest.client.requests.Session.get")
     def test_request_invalid_json(self, mock_get, client_no_auth):
         """Test invalid JSON response"""
         mock_response = Mock()
@@ -290,7 +291,7 @@ class TestKrakenClientRESTMethods:
         with pytest.raises(ValueError, match="Invalid JSON response"):
             client_no_auth.request("Time")
 
-    @patch("kraken.rest.requests.Session.get")
+    @patch("kraken.rest.client.requests.Session.get")
     def test_request_api_error(self, mock_get, client_no_auth):
         """Test API error in response"""
         mock_response = Mock()
@@ -301,7 +302,7 @@ class TestKrakenClientRESTMethods:
         with pytest.raises(KrakenAPIError, match="API error"):
             client_no_auth.request("Time")
 
-    @patch("kraken.rest.requests.Session.get")
+    @patch("kraken.rest.client.requests.Session.get")
     def test_get_method(self, mock_get, client_no_auth):
         """Test get convenience method"""
         mock_response = Mock()
@@ -314,7 +315,7 @@ class TestKrakenClientRESTMethods:
         assert result["error"] == []
         mock_get.assert_called_once()
 
-    @patch("kraken.rest.requests.Session.post")
+    @patch("kraken.rest.client.requests.Session.post")
     def test_post_method(self, mock_post, client):
         """Test post convenience method"""
         mock_response = Mock()
@@ -356,7 +357,7 @@ class TestKrakenClientAsyncRESTInitialization:
     @pytest.mark.asyncio
     async def test_init_with_credentials(self):
         """Test initialization with explicit credentials"""
-        from kraken.rest import KrakenClientAsyncREST
+        from kraken.rest.client import KrakenClientAsyncREST
 
         api_key = "test_key"
         api_secret = base64.b64encode(b"test_secret").decode()
@@ -371,7 +372,7 @@ class TestKrakenClientAsyncRESTInitialization:
     @pytest.mark.asyncio
     async def test_init_without_credentials(self):
         """Test initialization without credentials"""
-        from kraken.rest import KrakenClientAsyncREST
+        from kraken.rest.client import KrakenClientAsyncREST
 
         client = KrakenClientAsyncREST()
 
@@ -382,7 +383,7 @@ class TestKrakenClientAsyncRESTInitialization:
     @pytest.mark.asyncio
     async def test_init_with_invalid_secret(self):
         """Test initialization with invalid base64 secret"""
-        from kraken.rest import KrakenClientAsyncREST
+        from kraken.rest.client import KrakenClientAsyncREST
 
         with pytest.raises(ValueError):
             KrakenClientAsyncREST(api_key="test", api_secret="invalid_base64!@#$%")
@@ -390,7 +391,7 @@ class TestKrakenClientAsyncRESTInitialization:
     @pytest.mark.asyncio
     async def test_init_custom_timeout(self):
         """Test initialization with custom timeout"""
-        from kraken.rest import KrakenClientAsyncREST
+        from kraken.rest.client import KrakenClientAsyncREST
 
         client = KrakenClientAsyncREST(timeout=60)
         assert client.timeout == 60
@@ -400,7 +401,7 @@ class TestKrakenClientAsyncRESTInitialization:
         """Test that async client works as context manager"""
         import httpx
 
-        from kraken.rest import KrakenClientAsyncREST
+        from kraken.rest.client import KrakenClientAsyncREST
 
         async with KrakenClientAsyncREST() as client:
             assert isinstance(client, KrakenClientAsyncREST)
@@ -416,7 +417,7 @@ class TestKrakenClientAsyncRESTMethods:
     @pytest.fixture
     def async_client(self):
         """Create an async client instance for testing"""
-        from kraken.rest import KrakenClientAsyncREST
+        from kraken.rest.client import KrakenClientAsyncREST
 
         api_key = "test_key"
         api_secret = base64.b64encode(b"test_secret").decode()
@@ -425,7 +426,7 @@ class TestKrakenClientAsyncRESTMethods:
     @pytest.fixture
     def async_client_no_auth(self):
         """Create an async client instance without authentication"""
-        from kraken.rest import KrakenClientAsyncREST
+        from kraken.rest.client import KrakenClientAsyncREST
 
         return KrakenClientAsyncREST()
 
