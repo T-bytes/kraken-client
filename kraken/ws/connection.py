@@ -10,6 +10,7 @@ from websockets.sync.client import ClientConnection as SyncClientConnection
 from websockets.sync.client import connect as sync_connect
 
 from kraken.constants import RETRY_TIME_LIMIT
+from kraken.exceptions import KrakenPayloadError, KrakenWebsocketError
 
 
 class KrakenSocketConnection:
@@ -94,7 +95,9 @@ class KrakenSocketConnection:
                 if self._should_run:
                     error_msg = f"Connection failed after {RETRY_TIME_LIMIT}s: {e}"
                     logger.error(error_msg)
-                    error_payload = {"e": "error", "m": error_msg}
+                    # Create KrakenWebsocketError and pass its message to callback
+                    ws_error = KrakenWebsocketError(error_msg)
+                    error_payload = {"e": "error", "m": str(ws_error)}
                     self._handle_message(error_payload)
                     self._should_run = False
                 break
@@ -125,7 +128,10 @@ class KrakenSocketConnection:
                     payload_obj = json.loads(message)
                     self._handle_message(payload_obj)
                 except json.JSONDecodeError as e:
-                    logger.error(f"Failed to decode message: {e}")
+                    payload_error = KrakenPayloadError(
+                        f"Failed to decode message: {e}", message, 0
+                    )
+                    logger.error(str(payload_error))
                 except Exception as e:
                     logger.error(f"Error handling message: {e}")
 
@@ -244,7 +250,9 @@ class KrakenSocketAsyncConnection:
                 if self._should_run:
                     error_msg = f"Connection failed after {RETRY_TIME_LIMIT}s: {e}"
                     logger.error(error_msg)
-                    error_payload = {"e": "error", "m": error_msg}
+                    # Create KrakenWebsocketError and pass its message to callback
+                    ws_error = KrakenWebsocketError(error_msg)
+                    error_payload = {"e": "error", "m": str(ws_error)}
                     await self._handle_message(error_payload)
                     self._should_run = False
                 break
@@ -278,7 +286,10 @@ class KrakenSocketAsyncConnection:
                     payload_obj = json.loads(message)
                     await self._handle_message(payload_obj)
                 except json.JSONDecodeError as e:
-                    logger.error(f"Failed to decode message: {e}")
+                    payload_error = KrakenPayloadError(
+                        f"Failed to decode message: {e}", message, 0
+                    )
+                    logger.error(str(payload_error))
                 except Exception as e:
                     logger.error(f"Error handling message: {e}")
 

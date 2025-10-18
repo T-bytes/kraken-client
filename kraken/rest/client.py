@@ -28,7 +28,13 @@ from typing import Any, Dict, Optional
 import httpx
 import requests
 
-from kraken.exceptions import KrakenAPIError
+from kraken.exceptions import (
+    KrakenAPIError,
+    KrakenConnectionError,
+    KrakenHTTPError,
+    KrakenPayloadError,
+    KrakenTimeoutError,
+)
 from kraken.rest.endpoint import KrakenEndpoint
 
 logger = logging.getLogger(__name__)
@@ -148,8 +154,11 @@ class KrakenClientREST:
             Parsed JSON response from the API
 
         Raises:
-            ValueError: If authentication is required but credentials missing, or JSON parsing fails
-            requests.exceptions.*: If HTTP request fails
+            ValueError: If authentication is required but credentials missing
+            KrakenTimeoutError: If request times out
+            KrakenConnectionError: If connection to API fails
+            KrakenHTTPError: If HTTP error occurs (4xx, 5xx)
+            KrakenPayloadError: If JSON parsing fails
             KrakenAPIError: If the Kraken API returns an error response
         """
         if params is None:
@@ -196,13 +205,13 @@ class KrakenClientREST:
 
         except requests.exceptions.Timeout as e:
             logger.error(f"Request timeout for {method}: {e}")
-            raise
+            raise KrakenTimeoutError(f"Request timeout for {method}: {e}") from e
         except requests.exceptions.ConnectionError as e:
             logger.error(f"Connection error for {method}: {e}")
-            raise
+            raise KrakenConnectionError(f"Connection error for {method}: {e}") from e
         except requests.exceptions.HTTPError as e:
             logger.error(f"HTTP error for {method}: {e}")
-            raise
+            raise KrakenHTTPError(f"HTTP error for {method}: {e}") from e
         except requests.exceptions.RequestException as e:
             logger.error(f"Request failed for {method}: {e}")
             raise
@@ -212,7 +221,7 @@ class KrakenClientREST:
             data = response.json()
         except ValueError as e:
             logger.error(f"Failed to parse JSON response: {e}")
-            raise ValueError(f"Invalid JSON response: {e}") from e
+            raise KrakenPayloadError(f"Invalid JSON response: {e}", "", 0) from e
 
         # Check for API errors
         if "error" in data and data["error"]:
@@ -238,7 +247,10 @@ class KrakenClientREST:
 
         Raises:
             ValueError: If the method is unknown or authentication fails
-            requests.exceptions.*: If HTTP request fails
+            KrakenTimeoutError: If request times out
+            KrakenConnectionError: If connection to API fails
+            KrakenHTTPError: If HTTP error occurs (4xx, 5xx)
+            KrakenPayloadError: If JSON parsing fails
             KrakenAPIError: If the API returns an error response
 
         Example:
@@ -413,8 +425,11 @@ class KrakenClientAsyncREST:
 
         Raises:
             RuntimeError: If client is not initialized
-            ValueError: If authentication is required but credentials missing, or JSON parsing fails
-            httpx.*: If HTTP request fails
+            ValueError: If authentication is required but credentials missing
+            KrakenTimeoutError: If request times out
+            KrakenConnectionError: If connection to API fails
+            KrakenHTTPError: If HTTP error occurs (4xx, 5xx)
+            KrakenPayloadError: If JSON parsing fails
             KrakenAPIError: If the Kraken API returns an error response
         """
         if self.client is None:
@@ -464,13 +479,13 @@ class KrakenClientAsyncREST:
 
         except httpx.TimeoutException as e:
             logger.error(f"Request timeout for {method}: {e}")
-            raise
+            raise KrakenTimeoutError(f"Request timeout for {method}: {e}") from e
         except httpx.ConnectError as e:
             logger.error(f"Connection error for {method}: {e}")
-            raise
+            raise KrakenConnectionError(f"Connection error for {method}: {e}") from e
         except httpx.HTTPStatusError as e:
             logger.error(f"HTTP error for {method}: {e}")
-            raise
+            raise KrakenHTTPError(f"HTTP error for {method}: {e}") from e
         except httpx.RequestError as e:
             logger.error(f"Request failed for {method}: {e}")
             raise
@@ -480,7 +495,7 @@ class KrakenClientAsyncREST:
             data = response.json()
         except ValueError as e:
             logger.error(f"Failed to parse JSON response: {e}")
-            raise ValueError(f"Invalid JSON response: {e}") from e
+            raise KrakenPayloadError(f"Invalid JSON response: {e}", "", 0) from e
 
         # Check for API errors
         if "error" in data and data["error"]:
@@ -508,7 +523,10 @@ class KrakenClientAsyncREST:
 
         Raises:
             ValueError: If the method is unknown or authentication fails
-            httpx.*: If HTTP request fails
+            KrakenTimeoutError: If request times out
+            KrakenConnectionError: If connection to API fails
+            KrakenHTTPError: If HTTP error occurs (4xx, 5xx)
+            KrakenPayloadError: If JSON parsing fails
             KrakenAPIError: If the API returns an error response
 
         Example:

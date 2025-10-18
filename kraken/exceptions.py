@@ -1,15 +1,29 @@
-class KrakenAPIError(Exception):
-    """Base exception for Kraken API errors.
+import json
 
-    This exception is used specifically for errors returned by the Kraken API
-    in response bodies (e.g., invalid parameters, rate limits, etc.).
+import httpx
+import requests.exceptions as reqex
+import websockets.exceptions as socketex
 
-    For other error types, the library uses standard exceptions:
-    - ValueError: Authentication/configuration errors
-    - requests.exceptions.*: HTTP client errors (sync)
-    - httpx.*: HTTP client errors (async)
-    - websockets.exceptions.*: WebSocket errors
-    - json.JSONDecodeError: Response parsing errors
-    """
 
+class KrakenAPIError(RuntimeError):
+    pass
+
+
+class KrakenPayloadError(KrakenAPIError, json.JSONDecodeError):
+    pass
+
+
+class KrakenWebsocketError(KrakenAPIError, socketex.WebSocketException):
+    pass
+
+
+class KrakenTimeoutError(KrakenAPIError, reqex.Timeout, httpx.TimeoutException):
+    pass
+
+
+class KrakenConnectionError(KrakenAPIError, reqex.ConnectionError, httpx.ConnectError):
+    pass
+
+
+class KrakenHTTPError(KrakenAPIError, reqex.HTTPError, httpx.HTTPError):
     pass
