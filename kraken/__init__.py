@@ -8,7 +8,7 @@ from kraken.exceptions import (
     KrakenTimeoutError,
     KrakenWebsocketError,
 )
-from kraken.rest import KrakenClientAsyncREST, KrakenClientREST
+from kraken.rest import KrakenClientAsyncREST, KrakenClientREST, KrakenRESTClient
 from kraken.ws import KrakenClientAsyncWS, KrakenClientWS
 
 __all__ = [
@@ -19,6 +19,7 @@ __all__ = [
     "KrakenTimeoutError",
     "KrakenConnectionError",
     "KrakenHTTPError",
+    "KrakenRESTClient",
     "KrakenClientREST",
     "KrakenClientAsyncREST",
     "KrakenClientWS",

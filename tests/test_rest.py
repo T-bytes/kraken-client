@@ -4,8 +4,8 @@ import base64
 import os
 from unittest.mock import MagicMock, Mock, patch
 
+import httpx
 import pytest
-import requests
 
 from kraken.exceptions import (
     KrakenAPIError,
@@ -14,7 +14,7 @@ from kraken.exceptions import (
     KrakenPayloadError,
     KrakenTimeoutError,
 )
-from kraken.rest.client import KrakenClientREST
+from kraken.rest.client import KrakenClientREST, KrakenRESTClient
 from kraken.rest.endpoint import KrakenEndpoint
 
 
@@ -93,7 +93,7 @@ class TestKrakenClientRESTInitialization:
         assert client.api_key == api_key
         assert client.api_secret == b"test_secret"
         assert client.timeout == 30
-        assert isinstance(client.session, requests.Session)
+        assert client._sync_client is None  # Lazy initialization
 
     def test_init_without_credentials(self):
         """Test initialization without credentials"""
@@ -101,7 +101,7 @@ class TestKrakenClientRESTInitialization:
 
         # Should not raise error, credentials are optional
         assert client.api_key is None or isinstance(client.api_key, str)
-        assert isinstance(client.session, requests.Session)
+        assert client._sync_client is None  # Lazy initialization
 
     @patch.dict(os.environ, {"KRAKEN_API_KEY": "env_key", "KRAKEN_API_SECRET": ""})
     def test_init_with_env_variables(self):
@@ -128,10 +128,10 @@ class TestKrakenClientRESTInitialization:
         """Test that client works as context manager"""
         with KrakenClientREST() as client:
             assert isinstance(client, KrakenClientREST)
-            assert isinstance(client.session, requests.Session)
+            assert isinstance(client._sync_client, httpx.Client)
 
-        # Session should be closed after exiting context
-        assert client.session  # Session object still exists
+        # Client should be closed after exiting context
+        assert client._sync_client is None
 
 
 class TestKrakenClientRESTMethods:
@@ -198,7 +198,7 @@ class TestKrakenClientRESTMethods:
         with pytest.raises(ValueError, match="API secret required"):
             client_no_auth._sign_request("/0/private/Balance", {}, "123")
 
-    @patch("kraken.rest.client.requests.Session.get")
+    @patch("httpx.Client.get")
     def test_request_public_endpoint(self, mock_get, client_no_auth):
         """Test making a request to public endpoint"""
         mock_response = Mock()
@@ -212,7 +212,7 @@ class TestKrakenClientRESTMethods:
         assert "result" in result
         mock_get.assert_called_once()
 
-    @patch("kraken.rest.client.requests.Session.post")
+    @patch("httpx.Client.post")
     def test_request_private_endpoint(self, mock_post, client):
         """Test making a request to private endpoint"""
         mock_response = Mock()
@@ -234,11 +234,11 @@ class TestKrakenClientRESTMethods:
 
     def test_request_private_without_auth(self, client_no_auth):
         """Test making a private request without credentials"""
-        with patch("kraken.rest.client.requests.Session.post") as mock_post:
+        with patch("httpx.Client.post") as mock_post:
             with pytest.raises(ValueError, match="API key and secret required"):
                 client_no_auth.request("Balance")
 
-    @patch("kraken.rest.client.requests.Session.get")
+    @patch("httpx.Client.get")
     def test_request_with_params(self, mock_get, client_no_auth):
         """Test request with parameters"""
         mock_response = Mock()
@@ -252,41 +252,43 @@ class TestKrakenClientRESTMethods:
         assert "params" in call_kwargs
         assert call_kwargs["params"]["pair"] == "XBTUSD"
 
-    @patch("kraken.rest.client.requests.Session.get")
+    @patch("httpx.Client.get")
     def test_request_timeout(self, mock_get, client_no_auth):
         """Test request timeout"""
-        mock_get.side_effect = requests.exceptions.Timeout("Request timeout")
+        mock_get.side_effect = httpx.TimeoutException("Request timeout")
 
         with pytest.raises(KrakenTimeoutError):
             client_no_auth.request("Time")
 
-    @patch("kraken.rest.client.requests.Session.get")
+    @patch("httpx.Client.get")
     def test_request_connection_error(self, mock_get, client_no_auth):
         """Test connection error"""
-        mock_get.side_effect = requests.exceptions.ConnectionError("Connection failed")
+        mock_get.side_effect = httpx.ConnectError("Connection failed")
 
         with pytest.raises(KrakenConnectionError):
             client_no_auth.request("Time")
 
-    @patch("kraken.rest.client.requests.Session.get")
+    @patch("httpx.Client.get")
     def test_request_http_error(self, mock_get, client_no_auth):
         """Test HTTP error (4xx, 5xx)"""
         mock_response = Mock()
-        mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError("404")
+        mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
+            "404", request=Mock(), response=Mock()
+        )
         mock_get.return_value = mock_response
 
         with pytest.raises(KrakenHTTPError):
             client_no_auth.request("Time")
 
-    @patch("kraken.rest.client.requests.Session.get")
+    @patch("httpx.Client.get")
     def test_request_generic_exception(self, mock_get, client_no_auth):
         """Test generic request exception"""
-        mock_get.side_effect = requests.exceptions.RequestException("Generic error")
+        mock_get.side_effect = httpx.RequestError("Generic error")
 
-        with pytest.raises(requests.exceptions.RequestException):
+        with pytest.raises(httpx.RequestError):
             client_no_auth.request("Time")
 
-    @patch("kraken.rest.client.requests.Session.get")
+    @patch("httpx.Client.get")
     def test_request_invalid_json(self, mock_get, client_no_auth):
         """Test invalid JSON response"""
         mock_response = Mock()
@@ -297,7 +299,7 @@ class TestKrakenClientRESTMethods:
         with pytest.raises(KrakenPayloadError, match="Invalid JSON response"):
             client_no_auth.request("Time")
 
-    @patch("kraken.rest.client.requests.Session.get")
+    @patch("httpx.Client.get")
     def test_request_api_error(self, mock_get, client_no_auth):
         """Test API error in response"""
         mock_response = Mock()
@@ -308,7 +310,7 @@ class TestKrakenClientRESTMethods:
         with pytest.raises(KrakenAPIError, match="API error"):
             client_no_auth.request("Time")
 
-    @patch("kraken.rest.client.requests.Session.get")
+    @patch("httpx.Client.get")
     def test_get_method(self, mock_get, client_no_auth):
         """Test get convenience method"""
         mock_response = Mock()
@@ -321,7 +323,7 @@ class TestKrakenClientRESTMethods:
         assert result["error"] == []
         mock_get.assert_called_once()
 
-    @patch("kraken.rest.client.requests.Session.post")
+    @patch("httpx.Client.post")
     def test_post_method(self, mock_post, client):
         """Test post convenience method"""
         mock_response = Mock()
@@ -336,12 +338,13 @@ class TestKrakenClientRESTMethods:
 
     def test_close(self, client):
         """Test closing the client"""
-        mock_session = Mock()
-        client.session = mock_session
+        # Initialize the client first
+        _ = client._get_sync_client()
+        assert client._sync_client is not None
 
         client.close()
 
-        mock_session.close.assert_called_once()
+        assert client._sync_client is None
 
 
 class TestExceptionHierarchy:
@@ -359,25 +362,16 @@ class TestExceptionHierarchy:
     def test_timeout_error_inheritance(self):
         """Test KrakenTimeoutError inherits from both custom and library exceptions"""
         assert issubclass(KrakenTimeoutError, KrakenAPIError)
-        assert issubclass(KrakenTimeoutError, requests.exceptions.Timeout)
-        import httpx
-
         assert issubclass(KrakenTimeoutError, httpx.TimeoutException)
 
     def test_connection_error_inheritance(self):
         """Test KrakenConnectionError inherits from both custom and library exceptions"""
         assert issubclass(KrakenConnectionError, KrakenAPIError)
-        assert issubclass(KrakenConnectionError, requests.exceptions.ConnectionError)
-        import httpx
-
         assert issubclass(KrakenConnectionError, httpx.ConnectError)
 
     def test_http_error_inheritance(self):
         """Test KrakenHTTPError inherits from both custom and library exceptions"""
         assert issubclass(KrakenHTTPError, KrakenAPIError)
-        assert issubclass(KrakenHTTPError, requests.exceptions.HTTPError)
-        import httpx
-
         assert issubclass(KrakenHTTPError, httpx.HTTPError)
 
     def test_payload_error_inheritance(self):
@@ -387,112 +381,56 @@ class TestExceptionHierarchy:
         assert issubclass(KrakenPayloadError, KrakenAPIError)
         assert issubclass(KrakenPayloadError, json.JSONDecodeError)
 
-    def test_backward_compatibility_timeout(self):
-        """Test that KrakenTimeoutError can be caught as requests.Timeout"""
+    def test_httpx_compatibility_timeout(self):
+        """Test that KrakenTimeoutError can be caught as httpx.TimeoutException"""
         try:
             raise KrakenTimeoutError("test")
-        except requests.exceptions.Timeout:
+        except httpx.TimeoutException:
             pass  # Should be caught
 
-    def test_backward_compatibility_connection(self):
-        """Test that KrakenConnectionError can be caught as requests.ConnectionError"""
+    def test_httpx_compatibility_connection(self):
+        """Test that KrakenConnectionError can be caught as httpx.ConnectError"""
         try:
             raise KrakenConnectionError("test")
-        except requests.exceptions.ConnectionError:
+        except httpx.ConnectError:
             pass  # Should be caught
 
-    def test_backward_compatibility_http(self):
-        """Test that KrakenHTTPError can be caught as requests.HTTPError"""
+    def test_httpx_compatibility_http(self):
+        """Test that KrakenHTTPError can be caught as httpx.HTTPError"""
         try:
             raise KrakenHTTPError("test")
-        except requests.exceptions.HTTPError:
+        except httpx.HTTPError:
             pass  # Should be caught
 
 
-class TestKrakenClientAsyncRESTInitialization:
-    """Tests for KrakenClientAsyncREST initialization"""
+class TestKrakenRESTClientAsync:
+    """Tests for KrakenRESTClient async functionality"""
 
     @pytest.mark.asyncio
-    async def test_init_with_credentials(self):
-        """Test initialization with explicit credentials"""
-        from kraken.rest.client import KrakenClientAsyncREST
-
-        api_key = "test_key"
-        api_secret = base64.b64encode(b"test_secret").decode()
-
-        client = KrakenClientAsyncREST(api_key=api_key, api_secret=api_secret)
-
-        assert client.api_key == api_key
-        assert client.api_secret == b"test_secret"
-        assert client.timeout == 30
-        assert client.client is None  # Not initialized until context manager
-
-    @pytest.mark.asyncio
-    async def test_init_without_credentials(self):
-        """Test initialization without credentials"""
-        from kraken.rest.client import KrakenClientAsyncREST
-
-        client = KrakenClientAsyncREST()
-
-        # Should not raise error, credentials are optional
-        assert client.api_key is None or isinstance(client.api_key, str)
-        assert client.client is None
-
-    @pytest.mark.asyncio
-    async def test_init_with_invalid_secret(self):
-        """Test initialization with invalid base64 secret"""
-        from kraken.rest.client import KrakenClientAsyncREST
-
-        with pytest.raises(ValueError):
-            KrakenClientAsyncREST(api_key="test", api_secret="invalid_base64!@#$%")
-
-    @pytest.mark.asyncio
-    async def test_init_custom_timeout(self):
-        """Test initialization with custom timeout"""
-        from kraken.rest.client import KrakenClientAsyncREST
-
-        client = KrakenClientAsyncREST(timeout=60)
-        assert client.timeout == 60
-
-    @pytest.mark.asyncio
-    async def test_context_manager(self):
+    async def test_async_context_manager(self):
         """Test that async client works as context manager"""
-        import httpx
-
-        from kraken.rest.client import KrakenClientAsyncREST
-
-        async with KrakenClientAsyncREST() as client:
-            assert isinstance(client, KrakenClientAsyncREST)
-            assert isinstance(client.client, httpx.AsyncClient)
+        async with KrakenClientREST() as client:
+            assert isinstance(client, KrakenClientREST)
+            assert isinstance(client._async_client, httpx.AsyncClient)
 
         # Client should be closed after exiting context
-        assert client.client is None
+        assert client._async_client is None
 
 
-class TestKrakenClientAsyncRESTMethods:
-    """Tests for KrakenClientAsyncREST methods"""
+class TestKrakenRESTClientAsyncMethods:
+    """Tests for KrakenRESTClient async methods"""
 
     @pytest.fixture
     def async_client(self):
         """Create an async client instance for testing"""
-        from kraken.rest.client import KrakenClientAsyncREST
-
         api_key = "test_key"
         api_secret = base64.b64encode(b"test_secret").decode()
-        return KrakenClientAsyncREST(api_key=api_key, api_secret=api_secret)
+        return KrakenClientREST(api_key=api_key, api_secret=api_secret)
 
     @pytest.fixture
     def async_client_no_auth(self):
         """Create an async client instance without authentication"""
-        from kraken.rest.client import KrakenClientAsyncREST
-
-        return KrakenClientAsyncREST()
-
-    @pytest.mark.asyncio
-    async def test_request_not_initialized(self, async_client_no_auth):
-        """Test RuntimeError when client not initialized"""
-        with pytest.raises(RuntimeError, match="Client not initialized"):
-            await async_client_no_auth.request("Time")
+        return KrakenClientREST()
 
     @pytest.mark.asyncio
     async def test_get_api_type_unknown(self, async_client_no_auth):
@@ -508,9 +446,7 @@ class TestKrakenClientAsyncRESTMethods:
 
     @pytest.mark.asyncio
     async def test_request_public_endpoint(self, async_client_no_auth):
-        """Test making a request to public endpoint"""
-        import httpx
-
+        """Test making an async request to public endpoint"""
         with patch("httpx.AsyncClient.get") as mock_get:
             mock_response = Mock()
             mock_response.json.return_value = {"error": [], "result": {"unixtime": 1234567890}}
@@ -518,7 +454,7 @@ class TestKrakenClientAsyncRESTMethods:
             mock_get.return_value = mock_response
 
             async with async_client_no_auth as client:
-                result = await client.request("Time")
+                result = await client.arequest("Time")
 
             assert result["error"] == []
             assert "result" in result
@@ -526,7 +462,7 @@ class TestKrakenClientAsyncRESTMethods:
 
     @pytest.mark.asyncio
     async def test_request_private_endpoint(self, async_client):
-        """Test making a request to private endpoint"""
+        """Test making an async request to private endpoint"""
         with patch("httpx.AsyncClient.post") as mock_post:
             mock_response = Mock()
             mock_response.json.return_value = {"error": [], "result": {"balance": "1000"}}
@@ -534,7 +470,7 @@ class TestKrakenClientAsyncRESTMethods:
             mock_post.return_value = mock_response
 
             async with async_client as client:
-                result = await client.request("Balance")
+                result = await client.arequest("Balance")
 
             assert result["error"] == []
             assert "result" in result
@@ -548,14 +484,14 @@ class TestKrakenClientAsyncRESTMethods:
 
     @pytest.mark.asyncio
     async def test_request_private_without_auth(self, async_client_no_auth):
-        """Test making a private request without credentials"""
+        """Test making a private async request without credentials"""
         async with async_client_no_auth as client:
             with pytest.raises(ValueError, match="API key and secret required"):
-                await client.request("Balance")
+                await client.arequest("Balance")
 
     @pytest.mark.asyncio
     async def test_request_with_params(self, async_client_no_auth):
-        """Test request with parameters"""
+        """Test async request with parameters"""
         with patch("httpx.AsyncClient.get") as mock_get:
             mock_response = Mock()
             mock_response.json.return_value = {"error": [], "result": {}}
@@ -563,7 +499,7 @@ class TestKrakenClientAsyncRESTMethods:
             mock_get.return_value = mock_response
 
             async with async_client_no_auth as client:
-                await client.request("Ticker", params={"pair": "XBTUSD"})
+                await client.arequest("Ticker", params={"pair": "XBTUSD"})
 
             call_kwargs = mock_get.call_args[1]
             assert "params" in call_kwargs
@@ -571,33 +507,27 @@ class TestKrakenClientAsyncRESTMethods:
 
     @pytest.mark.asyncio
     async def test_request_timeout(self, async_client_no_auth):
-        """Test request timeout"""
-        import httpx
-
+        """Test async request timeout"""
         with patch("httpx.AsyncClient.get") as mock_get:
             mock_get.side_effect = httpx.TimeoutException("Request timeout")
 
             async with async_client_no_auth as client:
                 with pytest.raises(KrakenTimeoutError):
-                    await client.request("Time")
+                    await client.arequest("Time")
 
     @pytest.mark.asyncio
     async def test_request_connection_error(self, async_client_no_auth):
-        """Test connection error"""
-        import httpx
-
+        """Test async connection error"""
         with patch("httpx.AsyncClient.get") as mock_get:
             mock_get.side_effect = httpx.ConnectError("Connection failed")
 
             async with async_client_no_auth as client:
                 with pytest.raises(KrakenConnectionError):
-                    await client.request("Time")
+                    await client.arequest("Time")
 
     @pytest.mark.asyncio
     async def test_request_http_error(self, async_client_no_auth):
-        """Test HTTP error (4xx, 5xx)"""
-        import httpx
-
+        """Test async HTTP error (4xx, 5xx)"""
         with patch("httpx.AsyncClient.get") as mock_get:
             mock_response = Mock()
             mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
@@ -607,23 +537,21 @@ class TestKrakenClientAsyncRESTMethods:
 
             async with async_client_no_auth as client:
                 with pytest.raises(KrakenHTTPError):
-                    await client.request("Time")
+                    await client.arequest("Time")
 
     @pytest.mark.asyncio
     async def test_request_generic_exception(self, async_client_no_auth):
-        """Test generic request exception"""
-        import httpx
-
+        """Test async generic request exception"""
         with patch("httpx.AsyncClient.get") as mock_get:
             mock_get.side_effect = httpx.RequestError("Generic error")
 
             async with async_client_no_auth as client:
                 with pytest.raises(httpx.RequestError):
-                    await client.request("Time")
+                    await client.arequest("Time")
 
     @pytest.mark.asyncio
     async def test_request_invalid_json(self, async_client_no_auth):
-        """Test invalid JSON response"""
+        """Test async invalid JSON response"""
         with patch("httpx.AsyncClient.get") as mock_get:
             mock_response = Mock()
             mock_response.json.side_effect = ValueError("Invalid JSON")
@@ -632,11 +560,11 @@ class TestKrakenClientAsyncRESTMethods:
 
             async with async_client_no_auth as client:
                 with pytest.raises(KrakenPayloadError, match="Invalid JSON response"):
-                    await client.request("Time")
+                    await client.arequest("Time")
 
     @pytest.mark.asyncio
     async def test_request_api_error(self, async_client_no_auth):
-        """Test API error in response"""
+        """Test async API error in response"""
         with patch("httpx.AsyncClient.get") as mock_get:
             mock_response = Mock()
             mock_response.json.return_value = {"error": ["EGeneral:Invalid arguments"]}
@@ -645,11 +573,11 @@ class TestKrakenClientAsyncRESTMethods:
 
             async with async_client_no_auth as client:
                 with pytest.raises(KrakenAPIError, match="API error"):
-                    await client.request("Time")
+                    await client.arequest("Time")
 
     @pytest.mark.asyncio
-    async def test_get_method(self, async_client_no_auth):
-        """Test get convenience method"""
+    async def test_aget_method(self, async_client_no_auth):
+        """Test aget convenience method"""
         with patch("httpx.AsyncClient.get") as mock_get:
             mock_response = Mock()
             mock_response.json.return_value = {"error": [], "result": {}}
@@ -657,14 +585,14 @@ class TestKrakenClientAsyncRESTMethods:
             mock_get.return_value = mock_response
 
             async with async_client_no_auth as client:
-                result = await client.get("Time")
+                result = await client.aget("Time")
 
             assert result["error"] == []
             mock_get.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_post_method(self, async_client):
-        """Test post convenience method"""
+    async def test_apost_method(self, async_client):
+        """Test apost convenience method"""
         with patch("httpx.AsyncClient.post") as mock_post:
             mock_response = Mock()
             mock_response.json.return_value = {"error": [], "result": {}}
@@ -672,31 +600,29 @@ class TestKrakenClientAsyncRESTMethods:
             mock_post.return_value = mock_response
 
             async with async_client as client:
-                result = await client.post("Balance")
+                result = await client.apost("Balance")
 
             assert result["error"] == []
             mock_post.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_close(self, async_client):
+    async def test_aclose(self, async_client):
         """Test closing the async client"""
         from unittest.mock import AsyncMock
-
-        import httpx
 
         async with async_client:
             pass  # Client initialized
 
         # Should already be closed by context manager
-        assert async_client.client is None
+        assert async_client._async_client is None
 
         # Test explicit close
         mock_client = Mock(spec=httpx.AsyncClient)
         aclose_mock = AsyncMock()
         mock_client.aclose = aclose_mock
-        async_client.client = mock_client
+        async_client._async_client = mock_client
 
-        await async_client.close()
+        await async_client.aclose()
 
         aclose_mock.assert_called_once()
-        assert async_client.client is None
+        assert async_client._async_client is None
