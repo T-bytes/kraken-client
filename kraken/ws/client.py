@@ -1,11 +1,11 @@
 """Kraken WebSocket API Client
 
 This module provides a unified interface to the Kraken WebSocket API supporting both
-synchronous and asynchronous operations. Users can freely mix sync and async methods
-in their workflow without needing to manage separate client instances.
+synchronous and asynchronous operations. Sync and async methods can be mixed
+within the same client instance.
 
 The client manages WebSocket connections for subscriptions and requests, providing
-proper connection management, reconnection logic, and error handling.
+connection management, reconnection logic, and error handling.
 
 Example (Synchronous):
     >>> from kraken.ws import KrakenWSClient
@@ -67,12 +67,12 @@ logger = logging.getLogger(__name__)
 class KrakenWSClient:
     """Unified WebSocket client for Kraken API supporting both sync and async operations.
 
-    This client provides a flexible interface to interact with Kraken's WebSocket API,
-    allowing users to freely use synchronous or asynchronous methods without managing
-    separate client instances. The client maintains separate connection pools for sync
-    and async operations to properly handle different concurrency paradigms.
+    This client provides an interface to interact with Kraken's WebSocket API,
+    supporting both synchronous and asynchronous methods within a single instance.
+    The client maintains separate connection pools for sync and async operations
+    to handle different concurrency paradigms.
 
-    The client uses lazy initialization for async locks and maintains proper isolation
+    The client uses lazy initialization for async locks and maintains isolation
     between sync and async connection pools.
 
     Attributes:
@@ -164,9 +164,7 @@ class KrakenWSClient:
 
     # Synchronous public methods
 
-    def subscribe_public(
-        self, params: dict, callback: Callable[[dict], None], **kwargs
-    ) -> str:
+    def subscribe_public(self, params: dict, callback: Callable[[dict], None], **kwargs) -> str:
         """Subscribe to a public WebSocket channel (synchronous).
 
         Args:
@@ -190,9 +188,7 @@ class KrakenWSClient:
         """
         return self._subscribe(params, callback, False, **kwargs)
 
-    def subscribe_private(
-        self, params: dict, callback: Callable[[dict], None], **kwargs
-    ) -> str:
+    def subscribe_private(self, params: dict, callback: Callable[[dict], None], **kwargs) -> str:
         """Subscribe to a private WebSocket channel (synchronous).
 
         Args:

@@ -1,10 +1,10 @@
 """Kraken REST API Client
 
 This module provides a unified interface to the Kraken REST API supporting both
-synchronous and asynchronous operations. Users can freely mix sync and async methods
-in their workflow without needing to manage separate client instances.
+synchronous and asynchronous operations. Sync and async methods can be mixed
+within the same client instance.
 
-The client uses httpx for all HTTP operations and provides proper authentication,
+The client uses httpx for HTTP operations and provides authentication,
 error handling, and logging.
 
 Example (Synchronous):
@@ -61,13 +61,12 @@ logger = logging.getLogger(__name__)
 class KrakenRESTClient:
     """Unified REST client for Kraken API supporting both sync and async operations.
 
-    This client provides a flexible interface to interact with Kraken's REST API,
-    allowing users to freely use synchronous or asynchronous methods without managing
-    separate client instances. The client handles authentication, request signing,
-    and error handling automatically.
+    This client provides an interface to interact with Kraken's REST API,
+    supporting both synchronous and asynchronous methods within a single instance.
+    The client handles authentication, request signing, and error handling.
 
     The client uses lazy initialization for underlying HTTP clients, creating them
-    only when needed. For best resource management, use the client as a context manager
+    only when needed. For resource management, use the client as a context manager
     or explicitly call close()/aclose() when done.
 
     Attributes:
@@ -620,8 +619,3 @@ class KrakenRESTClient:
         """Asynchronous context manager exit."""
         await self.aclose()
         return False
-
-
-# Backward compatibility aliases
-KrakenClientREST = KrakenRESTClient
-KrakenClientAsyncREST = KrakenRESTClient

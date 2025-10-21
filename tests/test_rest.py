@@ -14,7 +14,7 @@ from kraken.exceptions import (
     KrakenPayloadError,
     KrakenTimeoutError,
 )
-from kraken.rest.client import KrakenClientREST, KrakenRESTClient
+from kraken.rest.client import KrakenRESTClient
 from kraken.rest.endpoint import KrakenEndpoint
 
 
@@ -80,15 +80,15 @@ class TestAPIType:
         assert KrakenEndpoint.STAKING.is_private()
 
 
-class TestKrakenClientRESTInitialization:
-    """Tests for KrakenClientREST initialization"""
+class TestKrakenRESTClientInitialization:
+    """Tests for KrakenRESTClient initialization"""
 
     def test_init_with_credentials(self):
         """Test initialization with explicit credentials"""
         api_key = "test_key"
         api_secret = base64.b64encode(b"test_secret").decode()
 
-        client = KrakenClientREST(api_key=api_key, api_secret=api_secret)
+        client = KrakenRESTClient(api_key=api_key, api_secret=api_secret)
 
         assert client.api_key == api_key
         assert client.api_secret == b"test_secret"
@@ -97,7 +97,7 @@ class TestKrakenClientRESTInitialization:
 
     def test_init_without_credentials(self):
         """Test initialization without credentials"""
-        client = KrakenClientREST()
+        client = KrakenRESTClient()
 
         # Should not raise error, credentials are optional
         assert client.api_key is None or isinstance(client.api_key, str)
@@ -109,7 +109,7 @@ class TestKrakenClientRESTInitialization:
         api_secret = base64.b64encode(b"env_secret").decode()
 
         with patch.dict(os.environ, {"KRAKEN_API_SECRET": api_secret}):
-            client = KrakenClientREST()
+            client = KrakenRESTClient()
 
             assert client.api_key == "env_key"
             assert client.api_secret == b"env_secret"
@@ -117,37 +117,37 @@ class TestKrakenClientRESTInitialization:
     def test_init_with_invalid_secret(self):
         """Test initialization with invalid base64 secret"""
         with pytest.raises(ValueError):
-            KrakenClientREST(api_key="test", api_secret="invalid_base64!@#$%")
+            KrakenRESTClient(api_key="test", api_secret="invalid_base64!@#$%")
 
     def test_init_custom_timeout(self):
         """Test initialization with custom timeout"""
-        client = KrakenClientREST(timeout=60)
+        client = KrakenRESTClient(timeout=60)
         assert client.timeout == 60
 
     def test_context_manager(self):
         """Test that client works as context manager"""
-        with KrakenClientREST() as client:
-            assert isinstance(client, KrakenClientREST)
+        with KrakenRESTClient() as client:
+            assert isinstance(client, KrakenRESTClient)
             assert isinstance(client._sync_client, httpx.Client)
 
         # Client should be closed after exiting context
         assert client._sync_client is None
 
 
-class TestKrakenClientRESTMethods:
-    """Tests for KrakenClientREST methods"""
+class TestKrakenRESTClientMethods:
+    """Tests for KrakenRESTClient methods"""
 
     @pytest.fixture
     def client(self):
         """Create a client instance for testing"""
         api_key = "test_key"
         api_secret = base64.b64encode(b"test_secret").decode()
-        return KrakenClientREST(api_key=api_key, api_secret=api_secret)
+        return KrakenRESTClient(api_key=api_key, api_secret=api_secret)
 
     @pytest.fixture
     def client_no_auth(self):
         """Create a client instance without authentication"""
-        return KrakenClientREST()
+        return KrakenRESTClient()
 
     def test_get_api_type_public(self, client):
         """Test _get_api_type for public endpoints"""
@@ -409,8 +409,8 @@ class TestKrakenRESTClientAsync:
     @pytest.mark.asyncio
     async def test_async_context_manager(self):
         """Test that async client works as context manager"""
-        async with KrakenClientREST() as client:
-            assert isinstance(client, KrakenClientREST)
+        async with KrakenRESTClient() as client:
+            assert isinstance(client, KrakenRESTClient)
             assert isinstance(client._async_client, httpx.AsyncClient)
 
         # Client should be closed after exiting context
@@ -425,12 +425,12 @@ class TestKrakenRESTClientAsyncMethods:
         """Create an async client instance for testing"""
         api_key = "test_key"
         api_secret = base64.b64encode(b"test_secret").decode()
-        return KrakenClientREST(api_key=api_key, api_secret=api_secret)
+        return KrakenRESTClient(api_key=api_key, api_secret=api_secret)
 
     @pytest.fixture
     def async_client_no_auth(self):
         """Create an async client instance without authentication"""
-        return KrakenClientREST()
+        return KrakenRESTClient()
 
     @pytest.mark.asyncio
     async def test_get_api_type_unknown(self, async_client_no_auth):

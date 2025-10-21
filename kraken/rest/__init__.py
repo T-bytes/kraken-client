@@ -1,3 +1,3 @@
-from .client import KrakenClientAsyncREST, KrakenClientREST, KrakenRESTClient
+from .client import KrakenRESTClient
 
-__all__ = ["KrakenRESTClient", "KrakenClientREST", "KrakenClientAsyncREST"]
+__all__ = ["KrakenRESTClient"]
