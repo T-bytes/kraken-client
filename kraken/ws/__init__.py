@@ -1,1 +1,3 @@
-from .client import KrakenClientAsyncWS, KrakenClientWS
+from .client import KrakenWSClient
+
+__all__ = ["KrakenWSClient"]

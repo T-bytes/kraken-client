@@ -9,12 +9,8 @@ from unittest.mock import AsyncMock, MagicMock, Mock, PropertyMock, call, patch
 import pytest
 from websockets.exceptions import WebSocketException
 
-from kraken.ws.client import (
-    KrakenClientAsyncWS,
-    KrakenClientWS,
-    KrakenSocketAsyncConnection,
-    KrakenSocketConnection,
-)
+from kraken.ws.client import KrakenWSClient
+from kraken.ws.connection import KrakenSocketAsyncConnection, KrakenSocketConnection
 
 
 class TestKrakenSocketAsyncConnection:
@@ -486,43 +482,43 @@ class TestKrakenSocketAsyncConnection:
         assert conn.is_connected is False
 
 
-class TestKrakenClientWS:
-    """Tests for KrakenClientWS class"""
+class TestKrakenWSClientAsync:
+    """Tests for KrakenWSClient async methods"""
 
     @pytest.mark.asyncio
     async def test_initialization(self):
-        """Test KrakenClientWS initialization"""
+        """Test KrakenWSClient initialization"""
         key = "test_key"
         secret = "test_secret"
         nonce_multiplier = 1.5
 
-        client = KrakenClientAsyncWS(key=key, secret=secret, nonce_multiplier=nonce_multiplier)
+        client = KrakenWSClient(key=key, secret=secret, nonce_multiplier=nonce_multiplier)
 
         assert client.key == key
         assert client.secret == secret
         assert client.nonce_multiplier == nonce_multiplier
-        assert client._connections == {}
+        assert client._async_connections == {}
 
     @pytest.mark.asyncio
     async def test_initialization_without_credentials(self):
-        """Test KrakenClientWS initialization without credentials"""
-        client = KrakenClientAsyncWS()
+        """Test KrakenWSClient initialization without credentials"""
+        client = KrakenWSClient()
 
         assert client.key is None
         assert client.secret is None
         assert client.nonce_multiplier == 1.0
-        assert client._connections == {}
+        assert client._async_connections == {}
 
     @pytest.mark.asyncio
     async def test_subscribe_public(self, sample_subscription_params, mock_async_callback):
         """Test public channel subscription"""
-        client = KrakenClientAsyncWS()
+        client = KrakenWSClient()
 
         mock_connection = AsyncMock()
         mock_connection.connect = AsyncMock()
 
         with patch("kraken.ws.client.KrakenSocketAsyncConnection", return_value=mock_connection):
-            conn_id = await client.subscribe_public(
+            conn_id = await client.asubscribe_public(
                 params=sample_subscription_params, callback=mock_async_callback
             )
 
@@ -530,18 +526,18 @@ class TestKrakenClientWS:
             assert conn_id == "ticker_BTC/USD"
 
             # Verify connection was created and stored
-            assert conn_id in client._connections
+            assert conn_id in client._async_connections
 
             # Verify connection was started
             mock_connection.connect.assert_called_once()
 
             # Clean up
-            await client.close()
+            await client.aclose()
 
     @pytest.mark.asyncio
     async def test_subscribe_public_without_symbol(self, mock_async_callback):
         """Test public channel subscription without symbol"""
-        client = KrakenClientAsyncWS()
+        client = KrakenWSClient()
 
         params = {"channel": "heartbeat"}
 
@@ -549,18 +545,18 @@ class TestKrakenClientWS:
         mock_connection.connect = AsyncMock()
 
         with patch("kraken.ws.client.KrakenSocketAsyncConnection", return_value=mock_connection):
-            conn_id = await client.subscribe_public(params=params, callback=mock_async_callback)
+            conn_id = await client.asubscribe_public(params=params, callback=mock_async_callback)
 
             # Verify connection ID format (no symbol)
             assert conn_id == "heartbeat"
 
             # Clean up
-            await client.close()
+            await client.aclose()
 
     @pytest.mark.asyncio
     async def test_subscribe_private(self, sample_subscription_params, mock_async_callback):
         """Test private channel subscription"""
-        client = KrakenClientAsyncWS(key="test_key", secret="test_secret")
+        client = KrakenWSClient(key="test_key", secret="test_secret")
 
         mock_connection = AsyncMock()
         mock_connection.connect = AsyncMock()
@@ -568,7 +564,7 @@ class TestKrakenClientWS:
         with patch(
             "kraken.ws.client.KrakenSocketAsyncConnection", return_value=mock_connection
         ) as mock_conn_class:
-            conn_id = await client.subscribe_private(
+            conn_id = await client.asubscribe_private(
                 params=sample_subscription_params, callback=mock_async_callback
             )
 
@@ -580,25 +576,25 @@ class TestKrakenClientWS:
             assert client.PRIVATE_STREAM_URL in call_args.kwargs["url"]
 
             # Clean up
-            await client.close()
+            await client.aclose()
 
     @pytest.mark.asyncio
     async def test_duplicate_subscription(self, sample_subscription_params, mock_async_callback):
         """Test that duplicate subscriptions are handled"""
-        client = KrakenClientAsyncWS()
+        client = KrakenWSClient()
 
         mock_connection = AsyncMock()
         mock_connection.connect = AsyncMock()
 
         with patch("kraken.ws.client.KrakenSocketAsyncConnection", return_value=mock_connection):
             # First subscription
-            conn_id_1 = await client.subscribe_public(
+            conn_id_1 = await client.asubscribe_public(
                 params=sample_subscription_params, callback=mock_async_callback
             )
 
             # Duplicate subscription
             with patch("kraken.ws.client.logger") as mock_logger:
-                conn_id_2 = await client.subscribe_public(
+                conn_id_2 = await client.asubscribe_public(
                     params=sample_subscription_params, callback=mock_async_callback
                 )
 
@@ -614,12 +610,12 @@ class TestKrakenClientWS:
                 assert len(warning_calls) > 0
 
             # Clean up
-            await client.close()
+            await client.aclose()
 
     @pytest.mark.asyncio
     async def test_request(self, sample_request_params, mock_async_callback):
         """Test sending a request"""
-        client = KrakenClientAsyncWS(key="test_key", secret="test_secret")
+        client = KrakenWSClient(key="test_key", secret="test_secret")
 
         mock_connection = AsyncMock()
         mock_connection.connect = AsyncMock()
@@ -627,7 +623,7 @@ class TestKrakenClientWS:
         with patch(
             "kraken.ws.client.KrakenSocketAsyncConnection", return_value=mock_connection
         ) as mock_conn_class:
-            conn_id = await client.request(
+            conn_id = await client.arequest(
                 request=sample_request_params, callback=mock_async_callback, req_id=12345
             )
 
@@ -636,19 +632,19 @@ class TestKrakenClientWS:
             assert len(conn_id) == 13  # Millisecond timestamp
 
             # Verify connection was created
-            assert conn_id in client._connections
+            assert conn_id in client._async_connections
 
             # Verify private URL was used
             call_args = mock_conn_class.call_args
             assert client.PRIVATE_STREAM_URL in call_args.kwargs["url"]
 
             # Clean up
-            await client.close()
+            await client.aclose()
 
     @pytest.mark.asyncio
     async def test_stop_socket(self, sample_subscription_params, mock_async_callback):
         """Test stopping a specific socket connection"""
-        client = KrakenClientAsyncWS()
+        client = KrakenWSClient()
 
         mock_connection = AsyncMock()
         mock_connection.connect = AsyncMock()
@@ -656,27 +652,27 @@ class TestKrakenClientWS:
 
         with patch("kraken.ws.client.KrakenSocketAsyncConnection", return_value=mock_connection):
             # Create connection
-            conn_id = await client.subscribe_public(
+            conn_id = await client.asubscribe_public(
                 params=sample_subscription_params, callback=mock_async_callback
             )
 
             # Stop the connection
-            result = await client.stop_socket(conn_id)
+            result = await client.astop_socket(conn_id)
 
             # Verify connection was stopped
             assert result is True
             mock_connection.disconnect.assert_called_once()
 
             # Verify connection was removed
-            assert conn_id not in client._connections
+            assert conn_id not in client._async_connections
 
     @pytest.mark.asyncio
     async def test_stop_socket_not_found(self):
         """Test stopping a non-existent socket connection"""
-        client = KrakenClientAsyncWS()
+        client = KrakenWSClient()
 
         with patch("kraken.ws.client.logger") as mock_logger:
-            result = await client.stop_socket("nonexistent_id")
+            result = await client.astop_socket("nonexistent_id")
 
             # Verify operation failed
             assert result is False
@@ -690,7 +686,7 @@ class TestKrakenClientWS:
     @pytest.mark.asyncio
     async def test_close_all_connections(self, sample_subscription_params, mock_async_callback):
         """Test closing all connections"""
-        client = KrakenClientAsyncWS()
+        client = KrakenWSClient()
 
         mock_connection_1 = AsyncMock()
         mock_connection_1.connect = AsyncMock()
@@ -704,31 +700,31 @@ class TestKrakenClientWS:
 
         with patch("kraken.ws.client.KrakenSocketAsyncConnection", side_effect=connections):
             # Create multiple connections
-            conn_id_1 = await client.subscribe_public(
+            conn_id_1 = await client.asubscribe_public(
                 params={"channel": "ticker", "symbol": ["BTC/USD"]}, callback=mock_async_callback
             )
 
-            conn_id_2 = await client.subscribe_public(
+            conn_id_2 = await client.asubscribe_public(
                 params={"channel": "ticker", "symbol": ["ETH/USD"]}, callback=mock_async_callback
             )
 
             # Close all connections
-            await client.close()
+            await client.aclose()
 
             # Verify all connections were disconnected
             mock_connection_1.disconnect.assert_called_once()
             mock_connection_2.disconnect.assert_called_once()
 
             # Verify connections were removed
-            assert len(client._connections) == 0
+            assert len(client._async_connections) == 0
 
     @pytest.mark.asyncio
     async def test_stop(self, sample_subscription_params, mock_async_callback):
         """Test stop() method calls close()"""
-        client = KrakenClientAsyncWS()
+        client = KrakenWSClient()
 
-        with patch.object(client, "close", new_callable=AsyncMock) as mock_close:
-            await client.stop()
+        with patch.object(client, "aclose", new_callable=AsyncMock) as mock_close:
+            await client.astop()
 
             # Verify close was called
             mock_close.assert_called_once()
@@ -736,7 +732,7 @@ class TestKrakenClientWS:
     @pytest.mark.asyncio
     async def test_get_connection_ids(self, sample_subscription_params, mock_async_callback):
         """Test getting list of active connection IDs"""
-        client = KrakenClientAsyncWS()
+        client = KrakenWSClient()
 
         mock_connection = AsyncMock()
         mock_connection.connect = AsyncMock()
@@ -746,11 +742,11 @@ class TestKrakenClientWS:
             assert client.get_connection_ids() == []
 
             # Create connections
-            conn_id_1 = await client.subscribe_public(
+            conn_id_1 = await client.asubscribe_public(
                 params={"channel": "ticker", "symbol": ["BTC/USD"]}, callback=mock_async_callback
             )
 
-            conn_id_2 = await client.subscribe_public(
+            conn_id_2 = await client.asubscribe_public(
                 params={"channel": "ticker", "symbol": ["ETH/USD"]}, callback=mock_async_callback
             )
 
@@ -763,12 +759,12 @@ class TestKrakenClientWS:
             assert conn_id_2 in conn_ids
 
             # Clean up
-            await client.close()
+            await client.aclose()
 
     @pytest.mark.asyncio
     async def test_is_connected(self, sample_subscription_params, mock_async_callback):
         """Test checking connection status"""
-        client = KrakenClientAsyncWS()
+        client = KrakenWSClient()
 
         mock_connection = AsyncMock()
         mock_connection.connect = AsyncMock()
@@ -780,7 +776,7 @@ class TestKrakenClientWS:
             assert client.is_connected("nonexistent_id") is False
 
             # Create connection
-            conn_id = await client.subscribe_public(
+            conn_id = await client.asubscribe_public(
                 params=sample_subscription_params, callback=mock_async_callback
             )
 
@@ -792,14 +788,14 @@ class TestKrakenClientWS:
             assert client.is_connected(conn_id) is False
 
             # Clean up
-            await client.close()
+            await client.aclose()
 
     @pytest.mark.asyncio
     async def test_subscription_with_extra_kwargs(
         self, sample_subscription_params, mock_async_callback
     ):
         """Test subscription with additional keyword arguments"""
-        client = KrakenClientAsyncWS()
+        client = KrakenWSClient()
 
         mock_connection = AsyncMock()
         mock_connection.connect = AsyncMock()
@@ -807,7 +803,7 @@ class TestKrakenClientWS:
         with patch(
             "kraken.ws.client.KrakenSocketAsyncConnection", return_value=mock_connection
         ) as mock_conn_class:
-            conn_id = await client.subscribe_public(
+            conn_id = await client.asubscribe_public(
                 params=sample_subscription_params,
                 callback=mock_async_callback,
                 req_id=12345,
@@ -824,12 +820,12 @@ class TestKrakenClientWS:
             assert payload["snapshot"] is True
 
             # Clean up
-            await client.close()
+            await client.aclose()
 
     @pytest.mark.asyncio
     async def test_url_construction(self):
         """Test that URLs are constructed correctly"""
-        client = KrakenClientAsyncWS()
+        client = KrakenWSClient()
 
         # Verify URL constants
         assert client.STREAM_URL == "wss://ws.kraken.com"
@@ -1135,34 +1131,34 @@ class TestKrakenSocketConnection:
         assert conn.is_connected is False
 
 
-class TestKrakenClientSyncWS:
-    """Tests for KrakenClientWS class"""
+class TestKrakenWSClientSync:
+    """Tests for KrakenWSClient sync methods"""
 
     def test_initialization(self):
-        """Test KrakenClientWS initialization"""
+        """Test KrakenWSClient initialization"""
         key = "test_key"
         secret = "test_secret"
         nonce_multiplier = 1.5
 
-        client = KrakenClientWS(key=key, secret=secret, nonce_multiplier=nonce_multiplier)
+        client = KrakenWSClient(key=key, secret=secret, nonce_multiplier=nonce_multiplier)
 
         assert client.key == key
         assert client.secret == secret
         assert client.nonce_multiplier == nonce_multiplier
-        assert client._connections == {}
+        assert client._sync_connections == {}
 
     def test_initialization_without_credentials(self):
-        """Test KrakenClientWS initialization without credentials"""
-        client = KrakenClientWS()
+        """Test KrakenWSClient initialization without credentials"""
+        client = KrakenWSClient()
 
         assert client.key is None
         assert client.secret is None
         assert client.nonce_multiplier == 1.0
-        assert client._connections == {}
+        assert client._sync_connections == {}
 
     def test_subscribe_public(self, sample_subscription_params, mock_callback):
         """Test public channel subscription"""
-        client = KrakenClientWS()
+        client = KrakenWSClient()
 
         mock_connection = Mock()
         mock_connection.connect = Mock()
@@ -1176,7 +1172,7 @@ class TestKrakenClientSyncWS:
             assert conn_id == "ticker_BTC/USD"
 
             # Verify connection was created and stored
-            assert conn_id in client._connections
+            assert conn_id in client._sync_connections
 
             # Verify connection was started
             mock_connection.connect.assert_called_once()
@@ -1186,7 +1182,7 @@ class TestKrakenClientSyncWS:
 
     def test_subscribe_public_without_symbol(self, mock_callback):
         """Test public channel subscription without symbol"""
-        client = KrakenClientWS()
+        client = KrakenWSClient()
 
         params = {"channel": "heartbeat"}
 
@@ -1204,7 +1200,7 @@ class TestKrakenClientSyncWS:
 
     def test_subscribe_private(self, sample_subscription_params, mock_callback):
         """Test private channel subscription"""
-        client = KrakenClientWS(key="test_key", secret="test_secret")
+        client = KrakenWSClient(key="test_key", secret="test_secret")
 
         mock_connection = Mock()
         mock_connection.connect = Mock()
@@ -1228,7 +1224,7 @@ class TestKrakenClientSyncWS:
 
     def test_duplicate_subscription(self, sample_subscription_params, mock_callback):
         """Test that duplicate subscriptions are handled"""
-        client = KrakenClientWS()
+        client = KrakenWSClient()
 
         mock_connection = Mock()
         mock_connection.connect = Mock()
@@ -1259,7 +1255,7 @@ class TestKrakenClientSyncWS:
 
     def test_request(self, sample_request_params, mock_callback):
         """Test sending a request"""
-        client = KrakenClientWS(key="test_key", secret="test_secret")
+        client = KrakenWSClient(key="test_key", secret="test_secret")
 
         mock_connection = Mock()
         mock_connection.connect = Mock()
@@ -1276,7 +1272,7 @@ class TestKrakenClientSyncWS:
             assert len(conn_id) == 13  # Millisecond timestamp
 
             # Verify connection was created
-            assert conn_id in client._connections
+            assert conn_id in client._sync_connections
 
             # Verify private URL was used
             call_args = mock_conn_class.call_args
@@ -1287,7 +1283,7 @@ class TestKrakenClientSyncWS:
 
     def test_stop_socket(self, sample_subscription_params, mock_callback):
         """Test stopping a specific socket connection"""
-        client = KrakenClientWS()
+        client = KrakenWSClient()
 
         mock_connection = Mock()
         mock_connection.connect = Mock()
@@ -1307,11 +1303,11 @@ class TestKrakenClientSyncWS:
             mock_connection.disconnect.assert_called_once()
 
             # Verify connection was removed
-            assert conn_id not in client._connections
+            assert conn_id not in client._sync_connections
 
     def test_stop_socket_not_found(self):
         """Test stopping a non-existent socket connection"""
-        client = KrakenClientWS()
+        client = KrakenWSClient()
 
         with patch("kraken.ws.client.logger") as mock_logger:
             result = client.stop_socket("nonexistent_id")
@@ -1327,7 +1323,7 @@ class TestKrakenClientSyncWS:
 
     def test_close_all_connections(self, sample_subscription_params, mock_callback):
         """Test closing all connections"""
-        client = KrakenClientWS()
+        client = KrakenWSClient()
 
         mock_connection_1 = Mock()
         mock_connection_1.connect = Mock()
@@ -1357,11 +1353,11 @@ class TestKrakenClientSyncWS:
             mock_connection_2.disconnect.assert_called_once()
 
             # Verify connections were removed
-            assert len(client._connections) == 0
+            assert len(client._sync_connections) == 0
 
     def test_stop(self, sample_subscription_params, mock_callback):
         """Test stop() method calls close()"""
-        client = KrakenClientWS()
+        client = KrakenWSClient()
 
         with patch.object(client, "close") as mock_close:
             client.stop()
@@ -1371,7 +1367,7 @@ class TestKrakenClientSyncWS:
 
     def test_get_connection_ids(self, sample_subscription_params, mock_callback):
         """Test getting list of active connection IDs"""
-        client = KrakenClientWS()
+        client = KrakenWSClient()
 
         mock_connection = Mock()
         mock_connection.connect = Mock()
@@ -1402,7 +1398,7 @@ class TestKrakenClientSyncWS:
 
     def test_is_connected(self, sample_subscription_params, mock_callback):
         """Test checking connection status"""
-        client = KrakenClientWS()
+        client = KrakenWSClient()
 
         mock_connection = Mock()
         mock_connection.connect = Mock()
@@ -1429,7 +1425,7 @@ class TestKrakenClientSyncWS:
 
     def test_subscription_with_extra_kwargs(self, sample_subscription_params, mock_callback):
         """Test subscription with additional keyword arguments"""
-        client = KrakenClientWS()
+        client = KrakenWSClient()
 
         mock_connection = Mock()
         mock_connection.connect = Mock()
@@ -1458,7 +1454,7 @@ class TestKrakenClientSyncWS:
 
     def test_url_construction(self):
         """Test that URLs are constructed correctly"""
-        client = KrakenClientWS()
+        client = KrakenWSClient()
 
         # Verify URL constants
         assert client.STREAM_URL == "wss://ws.kraken.com"
