@@ -1,7 +1,7 @@
 import json
 
 import httpx
-import websockets.exceptions as socketex
+import websockets.exceptions
 
 
 class KrakenAPIError(RuntimeError):
@@ -16,7 +16,7 @@ class KrakenPayloadError(KrakenAPIError, json.JSONDecodeError):
     pass
 
 
-class KrakenWebsocketError(KrakenAPIError, socketex.WebSocketException):
+class KrakenWebsocketError(KrakenAPIError, websockets.exceptions.WebSocketException):
     """Exception raised for WebSocket-related errors."""
 
     pass

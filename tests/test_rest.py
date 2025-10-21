@@ -336,6 +336,39 @@ class TestKrakenRESTClientMethods:
         assert result["error"] == []
         mock_post.assert_called_once()
 
+    def test_put_method(self, client):
+        """Test PUT method wrapper"""
+        with patch.object(client, "request") as mock_request:
+            mock_request.return_value = {"error": [], "result": {}}
+            params = {"test": "data"}
+
+            result = client.put("TestMethod", params)
+
+            mock_request.assert_called_once_with("TestMethod", params)
+            assert result == {"error": [], "result": {}}
+
+    def test_patch_method(self, client):
+        """Test PATCH method wrapper"""
+        with patch.object(client, "request") as mock_request:
+            mock_request.return_value = {"error": [], "result": {}}
+            params = {"test": "data"}
+
+            result = client.patch("TestMethod", params)
+
+            mock_request.assert_called_once_with("TestMethod", params)
+            assert result == {"error": [], "result": {}}
+
+    def test_delete_method(self, client):
+        """Test DELETE method wrapper"""
+        with patch.object(client, "request") as mock_request:
+            mock_request.return_value = {"error": [], "result": {}}
+            params = {"test": "data"}
+
+            result = client.delete("TestMethod", params)
+
+            mock_request.assert_called_once_with("TestMethod", params)
+            assert result == {"error": [], "result": {}}
+
     def test_close(self, client):
         """Test closing the client"""
         # Initialize the client first
@@ -604,6 +637,48 @@ class TestKrakenRESTClientAsyncMethods:
 
             assert result["error"] == []
             mock_post.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_aput_method(self, async_client):
+        """Test aput convenience method"""
+        from unittest.mock import AsyncMock
+
+        with patch.object(async_client, "arequest", new_callable=AsyncMock) as mock_arequest:
+            mock_arequest.return_value = {"error": [], "result": {}}
+            params = {"test": "data"}
+
+            result = await async_client.aput("TestMethod", params)
+
+            mock_arequest.assert_called_once_with("TestMethod", params)
+            assert result == {"error": [], "result": {}}
+
+    @pytest.mark.asyncio
+    async def test_apatch_method(self, async_client):
+        """Test apatch convenience method"""
+        from unittest.mock import AsyncMock
+
+        with patch.object(async_client, "arequest", new_callable=AsyncMock) as mock_arequest:
+            mock_arequest.return_value = {"error": [], "result": {}}
+            params = {"test": "data"}
+
+            result = await async_client.apatch("TestMethod", params)
+
+            mock_arequest.assert_called_once_with("TestMethod", params)
+            assert result == {"error": [], "result": {}}
+
+    @pytest.mark.asyncio
+    async def test_adelete_method(self, async_client):
+        """Test adelete convenience method"""
+        from unittest.mock import AsyncMock
+
+        with patch.object(async_client, "arequest", new_callable=AsyncMock) as mock_arequest:
+            mock_arequest.return_value = {"error": [], "result": {}}
+            params = {"test": "data"}
+
+            result = await async_client.adelete("TestMethod", params)
+
+            mock_arequest.assert_called_once_with("TestMethod", params)
+            assert result == {"error": [], "result": {}}
 
     @pytest.mark.asyncio
     async def test_aclose(self, async_client):

@@ -294,6 +294,139 @@ class TestKrakenSocketAsyncConnection:
                 await conn.disconnect()
 
     @pytest.mark.asyncio
+    async def test_should_run_check_during_message_iteration(self, sample_ticker_message):
+        """Test that _should_run flag is checked during message iteration (line 284)"""
+        url = "wss://test.example.com"
+        payload = {}
+
+        # Create a proper async generator class that we can control
+        class ControlledAsyncIterator:
+            def __init__(self, conn_ref):
+                self.conn = conn_ref
+                self.messages = [
+                    json.dumps(sample_ticker_message),
+                    json.dumps({"test": "second_message"}),
+                    json.dumps({"test": "third_message"}),
+                ]
+                self.index = 0
+
+            def __aiter__(self):
+                return self
+
+            async def __anext__(self):
+                if self.index < len(self.messages):
+                    msg = self.messages[self.index]
+                    self.index += 1
+                    # After first message, set _should_run to False
+                    if self.index == 1:
+                        await asyncio.sleep(0.05)  # Let first message process
+                    if self.index == 2:
+                        # Before yielding second message, the loop should check _should_run
+                        # and break (line 284)
+                        pass
+                    return msg
+                raise StopAsyncIteration
+
+        mock_callback = AsyncMock()
+        messages_received = []
+
+        async def callback_wrapper(msg):
+            messages_received.append(msg)
+            await mock_callback(msg)
+            # After first message, we'll disconnect which sets _should_run to False
+            if len(messages_received) == 1:
+                conn._should_run = False
+
+        mock_ws = AsyncMock()
+        mock_ws.closed = False
+        mock_ws.send = AsyncMock()
+
+        conn = KrakenSocketAsyncConnection(url=url, payload=payload, callback=callback_wrapper)
+
+        iterator = ControlledAsyncIterator(conn)
+
+        mock_ws.__aenter__ = AsyncMock(return_value=mock_ws)
+        mock_ws.__aexit__ = AsyncMock(return_value=None)
+        mock_ws.__aiter__ = lambda self: iterator
+
+        with patch("kraken.ws.connection.connect", return_value=mock_ws):
+            await conn.connect()
+
+            # Wait for processing
+            await asyncio.sleep(0.3)
+
+            # Cleanup
+            conn._should_run = False
+            if conn._task and not conn._task.done():
+                conn._task.cancel()
+                try:
+                    await conn._task
+                except asyncio.CancelledError:
+                    pass
+
+            # Verify only the first message was processed due to line 284 break
+            assert len(messages_received) == 1
+            assert messages_received[0] == sample_ticker_message
+
+    @pytest.mark.asyncio
+    async def test_generic_async_message_handling_exception(self, mock_async_callback):
+        """Test handling of generic exceptions during async message processing (lines 293-294)"""
+        url = "wss://test.example.com"
+        payload = {}
+
+        mock_ws = AsyncMock()
+        mock_ws.closed = False
+        mock_ws.send = AsyncMock()
+        messages = ['{"test": "data"}']
+
+        async def mock_aiter(self):
+            for msg in messages:
+                yield msg
+
+        mock_ws.__aenter__ = AsyncMock(return_value=mock_ws)
+        mock_ws.__aexit__ = AsyncMock(return_value=None)
+        mock_ws.__aiter__ = mock_aiter
+
+        call_count = [0]
+
+        def mock_connect(*args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return mock_ws
+            else:
+                # On reconnection attempts, block
+                async def blocking_enter(self):
+                    await asyncio.Event().wait()
+
+                blocking_mock = AsyncMock()
+                blocking_mock.__aenter__ = blocking_enter
+                blocking_mock.__aexit__ = AsyncMock(return_value=None)
+                return blocking_mock
+
+        conn = KrakenSocketAsyncConnection(url=url, payload=payload, callback=mock_async_callback)
+
+        with patch("kraken.ws.connection.connect", side_effect=mock_connect):
+            with patch("kraken.ws.connection.logger") as mock_logger:
+                # Make json.loads raise TypeError (generic exception, not JSONDecodeError)
+                with patch("kraken.ws.connection.json.loads", side_effect=TypeError("Test error")):
+                    await conn.connect()
+
+                    # Wait for message processing
+                    await asyncio.sleep(0.1)
+
+                    # Verify generic error was logged (lines 293-294)
+                    assert mock_logger.error.called
+                    error_calls = [
+                        c
+                        for c in mock_logger.error.call_args_list
+                        if "Error handling message" in str(c)
+                    ]
+                    assert len(error_calls) > 0
+
+                    # Clean up
+                    await conn.disconnect()
+
+    @pytest.mark.asyncio
     async def test_reconnection_with_backoff(self, mock_async_callback):
         """Test reconnection logic with backoff decorator"""
         url = "wss://test.example.com"
@@ -459,6 +592,43 @@ class TestKrakenSocketAsyncConnection:
             # Verify task was cancelled and completed
             assert conn._task.done()
             assert conn._should_run is False
+
+    @pytest.mark.asyncio
+    async def test_disconnect_cancelled_error_handling(self, mock_callback):
+        """Test that disconnect properly handles CancelledError when awaiting task (lines 327-328)"""
+        url = "wss://test.example.com"
+        payload = {}
+
+        # Create a real asyncio task that we can cancel
+        async def long_running_task():
+            try:
+                while True:
+                    await asyncio.sleep(10)
+            except asyncio.CancelledError:
+                raise
+
+        conn = KrakenSocketAsyncConnection(url=url, payload=payload, callback=mock_callback)
+        conn._task = asyncio.create_task(long_running_task())
+        conn._should_run = True
+        conn._websocket = AsyncMock()
+        conn._websocket.closed = False
+        conn._websocket.close = AsyncMock()
+
+        # Give the task a moment to start
+        await asyncio.sleep(0.01)
+
+        # Verify task is running
+        assert not conn._task.done()
+
+        # disconnect() should handle the CancelledError gracefully (lines 327-328)
+        await conn.disconnect()
+
+        # Verify task was cancelled
+        assert conn._task.done()
+        assert conn._should_run is False
+
+        # Verify the task was actually cancelled (not just finished normally)
+        assert conn._task.cancelled()
 
     @pytest.mark.asyncio
     async def test_is_connected_property(self, mock_callback):
@@ -839,6 +1009,25 @@ class TestKrakenWSClientAsync:
         assert public_url == "wss://ws.kraken.com/v2"
         assert private_url == "wss://ws-auth.kraken.com/v2"
 
+    @pytest.mark.asyncio
+    async def test_async_context_manager(self, sample_subscription_params, mock_async_callback):
+        """Test async context manager protocol"""
+        mock_connection = AsyncMock()
+        mock_connection.connect = AsyncMock()
+        mock_connection.disconnect = AsyncMock()
+
+        with patch("kraken.ws.client.KrakenSocketAsyncConnection", return_value=mock_connection):
+            async with KrakenWSClient() as client:
+                # Client should be usable inside context
+                conn_id = await client.asubscribe_public(
+                    params=sample_subscription_params, callback=mock_async_callback
+                )
+                assert conn_id in client._async_connections
+
+            # After exiting context, connections should be closed
+            assert len(client._async_connections) == 0
+            mock_connection.disconnect.assert_called()
+
 
 class TestKrakenSocketConnection:
     """Tests for KrakenSocketConnection class"""
@@ -982,8 +1171,56 @@ class TestKrakenSocketConnection:
                 ]
                 assert len(error_calls) > 0
 
+    def test_should_run_check_during_message_iteration_sync(self, sample_ticker_message):
+        """Test that _should_run flag is checked during message iteration (line 126)"""
+        url = "wss://test.example.com"
+        payload = {}
+
+        callback_called = threading.Event()
+        mock_callback = Mock()
+
+        def callback_wrapper(msg):
+            mock_callback(msg)
+            callback_called.set()
+
+        mock_ws = Mock()
+        mock_ws.closed = False
+        mock_ws.send = Mock()
+        mock_ws.close = Mock()
+
+        # Create an iterator that yields multiple messages
+        def mock_iter(self):
+            # First message should be processed
+            yield json.dumps(sample_ticker_message)
+            # Wait briefly to allow disconnect to be called
+            time.sleep(0.1)
+            # Second message should not be processed due to line 126 check
+            yield json.dumps({"test": "should_not_process"})
+
+        mock_ws.__iter__ = mock_iter
+        mock_ws.__enter__ = Mock(return_value=mock_ws)
+        mock_ws.__exit__ = Mock(return_value=None)
+
+        conn = KrakenSocketConnection(url=url, payload=payload, callback=callback_wrapper)
+
+        with patch("kraken.ws.connection.sync_connect", return_value=mock_ws):
+            conn.connect()
+
+            # Wait for first message to be processed
+            callback_called.wait(timeout=0.3)
+
+            # Now stop the connection (sets _should_run to False)
+            conn.disconnect()
+
+            # Give it a moment to ensure iterator finished
+            time.sleep(0.2)
+
+            # Verify callback was called exactly once (second message not processed)
+            assert mock_callback.call_count == 1
+            mock_callback.assert_called_once_with(sample_ticker_message)
+
     def test_json_decode_error_handling(self, mock_callback):
-        """Test handling of invalid JSON messages (covers lines 505-506)"""
+        """Test handling of invalid JSON messages"""
         url = "wss://test.example.com"
         payload = {}
 
@@ -1024,6 +1261,51 @@ class TestKrakenSocketConnection:
 
                 # Callback should not be called with invalid JSON
                 mock_callback.assert_not_called()
+
+    def test_generic_message_handling_exception(self, mock_callback):
+        """Test handling of generic exceptions during message processing (lines 135-136)"""
+        url = "wss://test.example.com"
+        payload = {}
+
+        mock_ws = Mock()
+        mock_ws.closed = False
+        mock_ws.send = Mock()
+        mock_ws.close = Mock()
+
+        # Create a message that will cause json.loads to raise a non-JSONDecodeError
+        # We'll mock json.loads to raise TypeError instead
+        messages = ['{"test": "data"}']
+
+        def mock_iter(self):
+            for msg in messages:
+                yield msg
+
+        mock_ws.__iter__ = mock_iter
+        mock_ws.__enter__ = Mock(return_value=mock_ws)
+        mock_ws.__exit__ = Mock(return_value=None)
+
+        conn = KrakenSocketConnection(url=url, payload=payload, callback=mock_callback)
+
+        with patch("kraken.ws.connection.sync_connect", return_value=mock_ws):
+            with patch("kraken.ws.connection.logger") as mock_logger:
+                # Make json.loads raise TypeError (a generic exception, not JSONDecodeError)
+                with patch("kraken.ws.connection.json.loads", side_effect=TypeError("Test error")):
+                    conn.connect()
+
+                    # Wait for message processing
+                    time.sleep(0.2)
+
+                    # Disconnect
+                    conn.disconnect()
+
+                    # Verify generic error was logged (lines 135-136)
+                    assert mock_logger.error.called
+                    error_calls = [
+                        c
+                        for c in mock_logger.error.call_args_list
+                        if "Error handling message" in str(c)
+                    ]
+                    assert len(error_calls) > 0
 
     def test_max_time_exceeded(self, mock_callback, sample_error_message):
         """Test that max time limit stops reconnection and sends error"""
@@ -1467,3 +1749,21 @@ class TestKrakenWSClientSync:
 
         assert public_url == "wss://ws.kraken.com/v2"
         assert private_url == "wss://ws-auth.kraken.com/v2"
+
+    def test_sync_context_manager(self, sample_subscription_params, mock_callback):
+        """Test sync context manager protocol"""
+        mock_connection = Mock()
+        mock_connection.connect = Mock()
+        mock_connection.disconnect = Mock()
+
+        with patch("kraken.ws.client.KrakenSocketConnection", return_value=mock_connection):
+            with KrakenWSClient() as client:
+                # Client should be usable inside context
+                conn_id = client.subscribe_public(
+                    params=sample_subscription_params, callback=mock_callback
+                )
+                assert conn_id in client._sync_connections
+
+            # After exiting context, connections should be closed
+            assert len(client._sync_connections) == 0
+            mock_connection.disconnect.assert_called()
