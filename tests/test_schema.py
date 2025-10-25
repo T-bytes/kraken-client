@@ -10,6 +10,9 @@ from kraken.rest.schema.trading import (
     AddOrderRequest,
     AddOrderResponse,
     AddOrderSuccess,
+    AmendOrderRequest,
+    AmendOrderResponse,
+    AmendOrderSuccess,
     ResponseErrorSchema,
 )
 
@@ -727,3 +730,480 @@ class TestConcurrentScenarios:
             assert order.deadline is not None
             deadline = datetime.fromisoformat(order.deadline)
             assert deadline.tzinfo is not None
+
+
+class TestAmendOrderRequest:
+    """Tests for AmendOrderRequest schema"""
+
+    def test_minimal_valid_amend_with_txid(self):
+        """Test creating a minimal valid amend request with txid"""
+        amend = AmendOrderRequest(
+            txid="OUF4EM-FRGI2-MQMWZD",
+            order_qty=2.5,
+        )
+
+        assert amend.txid == "OUF4EM-FRGI2-MQMWZD"
+        assert amend.order_qty == "2.5"
+        assert amend.cl_ord_id is None
+
+    def test_minimal_valid_amend_with_cl_ord_id(self):
+        """Test creating a minimal valid amend request with client order ID"""
+        amend = AmendOrderRequest(
+            cl_ord_id="my-order-123",
+            limit_price="51000.50",
+        )
+
+        assert amend.cl_ord_id == "my-order-123"
+        assert amend.limit_price == "51000.50"
+        assert amend.txid is None
+
+    def test_txid_cl_ord_id_mutually_exclusive(self):
+        """Test that txid and cl_ord_id are mutually exclusive"""
+        with pytest.raises(ValidationError, match="mutually exclusive"):
+            AmendOrderRequest(
+                txid="OUF4EM-FRGI2-MQMWZD",
+                cl_ord_id="my-order-123",
+                order_qty=1.0,
+            )
+
+    def test_at_least_one_identifier_required(self):
+        """Test that either txid or cl_ord_id must be provided"""
+        with pytest.raises(ValidationError, match="Either 'txid' or 'cl_ord_id' must be provided"):
+            AmendOrderRequest(
+                order_qty=1.5,
+                limit_price="50000",
+            )
+
+    def test_order_qty_conversion_to_string(self):
+        """Test that order_qty is converted to string"""
+        # Integer order_qty
+        amend1 = AmendOrderRequest(
+            txid="ABC-123",
+            order_qty=3,
+        )
+        assert amend1.order_qty == "3"
+
+        # Float order_qty
+        amend2 = AmendOrderRequest(
+            txid="ABC-123",
+            order_qty=2.75,
+        )
+        assert amend2.order_qty == "2.75"
+
+        # String order_qty (unchanged)
+        amend3 = AmendOrderRequest(
+            txid="ABC-123",
+            order_qty="1.5",
+        )
+        assert amend3.order_qty == "1.5"
+
+        # None order_qty
+        amend4 = AmendOrderRequest(
+            txid="ABC-123",
+            limit_price="50000",
+        )
+        assert amend4.order_qty is None
+
+    def test_display_qty_floor_enforcement(self):
+        """Test that display_qty is floored to 1/15 of order_qty"""
+        # Display quantity too small - should be floored to order_qty/15
+        amend1 = AmendOrderRequest(
+            txid="ABC-123",
+            order_qty=15,
+            display_qty=0.5,  # Less than 15/15 = 1
+        )
+        assert float(amend1.display_qty) == 1.0
+
+        # Display quantity too large - should be capped at order_qty
+        amend2 = AmendOrderRequest(
+            txid="ABC-123",
+            order_qty=10,
+            display_qty=20,  # More than order_qty
+        )
+        assert float(amend2.display_qty) == 10.0
+
+        # Valid display quantity - should be unchanged
+        amend3 = AmendOrderRequest(
+            txid="ABC-123",
+            order_qty=15,
+            display_qty=5,  # Between 1 and 15
+        )
+        assert float(amend3.display_qty) == 5.0
+
+        # None display quantity - should remain None
+        amend4 = AmendOrderRequest(
+            txid="ABC-123",
+            order_qty=10,
+        )
+        assert amend4.display_qty is None
+
+    def test_deadline_optional_when_not_provided(self):
+        """Test that deadline is optional and remains None until REST client adds it"""
+        amend = AmendOrderRequest(
+            txid="ABC-123",
+            order_qty=1.5,
+        )
+
+        # Deadline is NOT auto-generated to prevent race conditions
+        assert amend.deadline is None
+
+    def test_deadline_bounding(self):
+        """Test that deadline is bounded between 2-60 seconds"""
+        # Deadline too soon (< 2 seconds) - should be adjusted to 2 seconds
+        now = datetime.now(timezone.utc)
+        too_soon = (now + timedelta(seconds=1)).isoformat()
+        amend1 = AmendOrderRequest(
+            txid="ABC-123",
+            order_qty=1.5,
+            deadline=too_soon,
+        )
+        deadline1 = datetime.fromisoformat(amend1.deadline)
+        min_deadline = now + timedelta(seconds=2)
+        # Allow small timing differences
+        assert deadline1 >= min_deadline - timedelta(milliseconds=100)
+
+        # Deadline too far (> 60 seconds) - should be adjusted to 60 seconds
+        now2 = datetime.now(timezone.utc)
+        too_far = (now2 + timedelta(seconds=120)).isoformat()
+        amend2 = AmendOrderRequest(
+            txid="ABC-123",
+            order_qty=1.5,
+            deadline=too_far,
+        )
+        deadline2 = datetime.fromisoformat(amend2.deadline)
+        max_deadline = now2 + timedelta(seconds=60)
+        # Allow small timing differences
+        assert deadline2 <= max_deadline + timedelta(milliseconds=100)
+
+    def test_deadline_requires_timezone(self):
+        """Test that deadline must include timezone information"""
+        # Valid deadline with timezone
+        valid_deadline = datetime.now(timezone.utc).isoformat()
+        amend1 = AmendOrderRequest(
+            txid="ABC-123",
+            order_qty=1.5,
+            deadline=valid_deadline,
+        )
+        assert amend1.deadline is not None
+
+        # Invalid deadline without timezone - should raise error
+        invalid_deadline = "2025-01-15T12:00:00"  # No timezone
+        with pytest.raises(ValidationError, match="timezone information"):
+            AmendOrderRequest(
+                txid="ABC-123",
+                order_qty=1.5,
+                deadline=invalid_deadline,
+            )
+
+    def test_post_only_defaults_to_false(self):
+        """Test that post_only defaults to False"""
+        amend = AmendOrderRequest(
+            txid="ABC-123",
+            limit_price="50000",
+        )
+        assert amend.post_only is False
+
+    def test_post_only_can_be_set_true(self):
+        """Test that post_only can be set to True"""
+        amend = AmendOrderRequest(
+            txid="ABC-123",
+            limit_price="50000",
+            post_only=True,
+        )
+        assert amend.post_only is True
+
+    def test_relative_pricing_strings(self):
+        """Test that relative pricing strings are accepted"""
+        # Positive offset
+        amend1 = AmendOrderRequest(
+            txid="ABC-123",
+            limit_price="+100",
+        )
+        assert amend1.limit_price == "+100"
+
+        # Negative offset
+        amend2 = AmendOrderRequest(
+            txid="ABC-123",
+            trigger_price="-50",
+        )
+        assert amend2.trigger_price == "-50"
+
+        # Percentage offset
+        amend3 = AmendOrderRequest(
+            txid="ABC-123",
+            limit_price="+5%",
+        )
+        assert amend3.limit_price == "+5%"
+
+        # Combined trigger and limit
+        amend4 = AmendOrderRequest(
+            txid="ABC-123",
+            limit_price="+100",
+            trigger_price="-50%",
+        )
+        assert amend4.limit_price == "+100"
+        assert amend4.trigger_price == "-50%"
+
+    def test_pair_for_xstocks(self):
+        """Test that pair can be provided for non-crypto pairs"""
+        amend = AmendOrderRequest(
+            txid="ABC-123",
+            order_qty=10,
+            pair="TSLA/USD",
+        )
+        assert amend.pair == "TSLA/USD"
+
+    def test_no_nonce_field(self):
+        """Test that nonce is not present in schema (handled by REST client)"""
+        amend = AmendOrderRequest(
+            txid="ABC-123",
+            order_qty=1.5,
+        )
+
+        # Should not have a nonce attribute
+        assert not hasattr(amend, "nonce")
+
+    def test_to_api_dict_method(self):
+        """Test to_api_dict() serialization helper method"""
+        amend = AmendOrderRequest(
+            txid="OUF4EM-FRGI2-MQMWZD",
+            order_qty=2.5,
+            limit_price="51000",
+        )
+
+        # to_api_dict() should use by_alias=True and exclude_none=True
+        data = amend.to_api_dict()
+
+        # None values should be excluded by default
+        assert "deadline" not in data
+        assert "pair" not in data
+        assert "display_qty" not in data
+
+        # Non-None values should be present
+        assert data["txid"] == "OUF4EM-FRGI2-MQMWZD"
+        assert data["order_qty"] == "2.5"
+        assert data["limit_price"] == "51000"
+
+        # Test exclude_none=False
+        data_with_none = amend.to_api_dict(exclude_none=False)
+        assert "deadline" in data_with_none
+        assert data_with_none["deadline"] is None
+
+    def test_compute_deadline_static_method(self):
+        """Test the static compute_deadline() method"""
+        deadline_str = AmendOrderRequest.compute_deadline()
+
+        # Should be a valid ISO format timestamp
+        deadline = datetime.fromisoformat(deadline_str)
+        assert deadline.tzinfo is not None
+
+        # Should be between 2-60 seconds from now
+        now = datetime.now(timezone.utc)
+        time_diff = (deadline - now).total_seconds()
+        assert 2 <= time_diff <= 60
+
+    def test_all_fields_optional_except_identifier(self):
+        """Test that all fields are optional except txid or cl_ord_id"""
+        # Only txid provided
+        amend1 = AmendOrderRequest(txid="ABC-123")
+        assert amend1.txid == "ABC-123"
+
+        # Only cl_ord_id provided
+        amend2 = AmendOrderRequest(cl_ord_id="my-order")
+        assert amend2.cl_ord_id == "my-order"
+
+    def test_multiple_amendment_fields(self):
+        """Test amend request with multiple fields being amended"""
+        amend = AmendOrderRequest(
+            txid="OUF4EM-FRGI2-MQMWZD",
+            order_qty=5.0,
+            limit_price="52000",
+            trigger_price="51000",
+            display_qty=2.0,
+            pair="XBTUSD",
+            post_only=True,
+        )
+
+        assert amend.order_qty == "5.0"
+        assert amend.limit_price == "52000"
+        assert amend.trigger_price == "51000"
+        assert amend.display_qty == "2.0"
+        assert amend.pair == "XBTUSD"
+        assert amend.post_only is True
+
+
+class TestAmendOrderResponse:
+    """Tests for AmendOrder response schemas"""
+
+    def test_success_response_parsing(self):
+        """Test parsing a successful amend response"""
+        kraken_response = {
+            "error": [],
+            "result": {
+                "amend_id": "AMEND-123-456-789",
+            },
+        }
+
+        response = AmendOrderResponse.from_response(kraken_response)
+
+        assert response.is_success is True
+        assert response.success is not None
+        assert response.error is None
+        assert response.success.amend_id == "AMEND-123-456-789"
+
+    def test_error_response_parsing(self):
+        """Test parsing an error response"""
+        kraken_response = {
+            "error": ["EGeneral:Invalid arguments"],
+        }
+
+        response = AmendOrderResponse.from_response(kraken_response)
+
+        assert response.is_success is False
+        assert response.success is None
+        assert response.error is not None
+        assert "EGeneral:Invalid arguments" in response.error.error
+
+    def test_multiple_errors(self):
+        """Test parsing response with multiple errors"""
+        kraken_response = {
+            "error": [
+                "EGeneral:Invalid arguments",
+                "EOrder:Order not found",
+            ],
+        }
+
+        response = AmendOrderResponse.from_response(kraken_response)
+
+        assert response.is_success is False
+        assert len(response.error.error) == 2
+        assert "EGeneral:Invalid arguments" in response.error.error
+        assert "EOrder:Order not found" in response.error.error
+
+    def test_from_json_string(self):
+        """Test parsing from JSON string"""
+        json_response = json.dumps(
+            {
+                "error": [],
+                "result": {
+                    "amend_id": "TEST-AMEND-ID",
+                },
+            }
+        )
+
+        response = AmendOrderResponse.from_response(json_response)
+
+        assert response.is_success is True
+        assert response.success.amend_id == "TEST-AMEND-ID"
+
+    def test_invalid_response_format(self):
+        """Test that invalid response format raises appropriate error"""
+        invalid_response = {"error": []}  # Missing 'result'
+
+        with pytest.raises(ValueError, match="missing 'result'"):
+            AmendOrderResponse.from_response(invalid_response)
+
+    def test_success_model_direct_instantiation(self):
+        """Test creating AmendOrderSuccess directly"""
+        success = AmendOrderSuccess(amend_id="DIRECT-AMEND-123")
+
+        assert success.amend_id == "DIRECT-AMEND-123"
+
+    def test_error_model_direct_instantiation(self):
+        """Test creating error response directly"""
+        error = ResponseErrorSchema(error=["EGeneral:Invalid arguments"])
+
+        assert len(error.error) == 1
+        assert error.error[0] == "EGeneral:Invalid arguments"
+
+    def test_response_wrapper_direct_instantiation(self):
+        """Test creating AmendOrderResponse wrapper directly"""
+        success = AmendOrderSuccess(amend_id="WRAPPER-TEST")
+        response = AmendOrderResponse(success=success)
+
+        assert response.is_success is True
+        assert response.success.amend_id == "WRAPPER-TEST"
+
+        error = ResponseErrorSchema(error=["Test error"])
+        response2 = AmendOrderResponse(error=error)
+
+        assert response2.is_success is False
+        assert response2.error.error[0] == "Test error"
+
+
+class TestConcurrentAmendScenarios:
+    """Tests for concurrent and async amend usage scenarios"""
+
+    def test_multiple_amends_no_collision(self):
+        """Test that creating multiple amend requests simultaneously doesn't cause issues"""
+        # Create multiple amend requests in rapid succession
+        amends = []
+        for i in range(10):
+            amend = AmendOrderRequest(
+                txid=f"ORDER-{i}",
+                order_qty=1 + i * 0.1,
+            )
+            amends.append(amend)
+
+        # All amends should be valid
+        assert len(amends) == 10
+
+        # No nonce field should exist (nonce handled by REST client)
+        for amend in amends:
+            assert not hasattr(amend, "nonce")
+
+        # Each should have unique txid
+        txids = [a.txid for a in amends]
+        assert len(set(txids)) == 10
+
+    def test_deadline_validation_concurrent(self):
+        """Test that deadline validation works in concurrent scenarios"""
+        import concurrent.futures
+
+        def create_amend(i):
+            now = datetime.now(timezone.utc)
+            deadline = (now + timedelta(seconds=10 + i)).isoformat()
+            return AmendOrderRequest(
+                txid=f"ORDER-{i}",
+                order_qty=1,
+                deadline=deadline,
+            )
+
+        # Create amend requests concurrently with deadlines
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            amends = list(executor.map(create_amend, range(20)))
+
+        # All amends should have valid deadlines
+        assert len(amends) == 20
+        for amend in amends:
+            assert amend.deadline is not None
+            deadline = datetime.fromisoformat(amend.deadline)
+            assert deadline.tzinfo is not None
+
+    def test_mixed_identifier_types_concurrent(self):
+        """Test concurrent creation with mixed identifier types"""
+        import concurrent.futures
+
+        def create_amend(i):
+            if i % 2 == 0:
+                return AmendOrderRequest(
+                    txid=f"TXID-{i}",
+                    order_qty=1.0 + i,
+                )
+            else:
+                return AmendOrderRequest(
+                    cl_ord_id=f"CLIENT-ORDER-{i}",
+                    limit_price=f"{50000 + i * 100}",
+                )
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            amends = list(executor.map(create_amend, range(20)))
+
+        assert len(amends) == 20
+
+        # Check that txid and cl_ord_id are properly distributed
+        txid_amends = [a for a in amends if a.txid is not None]
+        cl_ord_id_amends = [a for a in amends if a.cl_ord_id is not None]
+
+        assert len(txid_amends) == 10
+        assert len(cl_ord_id_amends) == 10
