@@ -13,6 +13,9 @@ from kraken.rest.schema.trading import (
     AmendOrderRequest,
     AmendOrderResponse,
     AmendOrderSuccess,
+    CancelOrderRequest,
+    CancelOrderResponse,
+    CancelOrderSuccess,
     ResponseErrorSchema,
 )
 
@@ -1207,3 +1210,388 @@ class TestConcurrentAmendScenarios:
 
         assert len(txid_amends) == 10
         assert len(cl_ord_id_amends) == 10
+
+
+class TestCancelOrderRequest:
+    """Tests for CancelOrderRequest schema"""
+
+    def test_minimal_valid_cancel_with_string_txid(self):
+        """Test creating a minimal valid cancel request with string txid"""
+        cancel = CancelOrderRequest(txid="OUF4EM-FRGI2-MQMWZD")
+
+        assert cancel.txid == "OUF4EM-FRGI2-MQMWZD"
+        assert cancel.cl_ord_id is None
+
+    def test_minimal_valid_cancel_with_integer_txid(self):
+        """Test creating a minimal valid cancel request with integer txid (userref)"""
+        cancel = CancelOrderRequest(txid=12345)
+
+        assert cancel.txid == 12345
+        assert isinstance(cancel.txid, int)
+        assert cancel.cl_ord_id is None
+
+    def test_minimal_valid_cancel_with_cl_ord_id(self):
+        """Test creating a minimal valid cancel request with client order ID"""
+        cancel = CancelOrderRequest(cl_ord_id="my-order-123")
+
+        assert cancel.cl_ord_id == "my-order-123"
+        assert cancel.txid is None
+
+    def test_txid_string_integer_conversion(self):
+        """Test that numeric string txids are converted to integers"""
+        # Numeric string should be converted to int (userref)
+        cancel1 = CancelOrderRequest(txid="12345")
+        assert cancel1.txid == 12345
+        assert isinstance(cancel1.txid, int)
+
+        # Alphanumeric string stays as string (txid)
+        cancel2 = CancelOrderRequest(txid="OUF4EM-FRGI2-MQMWZD")
+        assert cancel2.txid == "OUF4EM-FRGI2-MQMWZD"
+        assert isinstance(cancel2.txid, str)
+
+        # String with spaces should be stripped
+        cancel3 = CancelOrderRequest(txid="  ABC-123-DEF  ")
+        assert cancel3.txid == "ABC-123-DEF"
+
+    def test_txid_cl_ord_id_mutually_exclusive(self):
+        """Test that txid and cl_ord_id are mutually exclusive"""
+        with pytest.raises(ValidationError, match="mutually exclusive"):
+            CancelOrderRequest(
+                txid="OUF4EM-FRGI2-MQMWZD",
+                cl_ord_id="my-order-123",
+            )
+
+    def test_at_least_one_identifier_required(self):
+        """Test that either txid or cl_ord_id must be provided"""
+        with pytest.raises(ValidationError, match="Either 'txid' or 'cl_ord_id' must be provided"):
+            CancelOrderRequest()
+
+    def test_no_nonce_field(self):
+        """Test that nonce is not present in schema (handled by REST client)"""
+        cancel = CancelOrderRequest(txid="OUF4EM-FRGI2-MQMWZD")
+
+        # Should not have a nonce attribute
+        assert not hasattr(cancel, "nonce")
+
+    def test_to_api_dict_method_with_txid(self):
+        """Test to_api_dict() serialization helper method with txid"""
+        cancel = CancelOrderRequest(txid="OUF4EM-FRGI2-MQMWZD")
+
+        # to_api_dict() should use by_alias=True and exclude_none=True
+        data = cancel.to_api_dict()
+
+        # None values should be excluded by default
+        assert "cl_ord_id" not in data
+
+        # Non-None values should be present
+        assert data["txid"] == "OUF4EM-FRGI2-MQMWZD"
+
+        # Test exclude_none=False
+        data_with_none = cancel.to_api_dict(exclude_none=False)
+        assert "cl_ord_id" in data_with_none
+        assert data_with_none["cl_ord_id"] is None
+
+    def test_to_api_dict_method_with_integer_txid(self):
+        """Test to_api_dict() serialization with integer txid (userref)"""
+        cancel = CancelOrderRequest(txid=99999)
+
+        data = cancel.to_api_dict()
+
+        # Integer txid should be preserved
+        assert data["txid"] == 99999
+        assert isinstance(data["txid"], int)
+
+    def test_to_api_dict_method_with_cl_ord_id(self):
+        """Test to_api_dict() serialization helper method with cl_ord_id"""
+        cancel = CancelOrderRequest(cl_ord_id="client-order-abc")
+
+        data = cancel.to_api_dict()
+
+        # None values should be excluded by default
+        assert "txid" not in data
+
+        # Non-None values should be present
+        assert data["cl_ord_id"] == "client-order-abc"
+
+    def test_various_txid_formats(self):
+        """Test various transaction ID formats"""
+        # Standard Kraken transaction ID format
+        cancel1 = CancelOrderRequest(txid="OUF4EM-FRGI2-MQMWZD")
+        assert cancel1.txid == "OUF4EM-FRGI2-MQMWZD"
+
+        # Shorter ID
+        cancel2 = CancelOrderRequest(txid="ABC123")
+        assert cancel2.txid == "ABC123"
+
+        # User reference as integer
+        cancel3 = CancelOrderRequest(txid=555)
+        assert cancel3.txid == 555
+
+        # User reference as string
+        cancel4 = CancelOrderRequest(txid="555")
+        assert cancel4.txid == 555  # Should be converted to int
+
+    def test_various_cl_ord_id_formats(self):
+        """Test various client order ID formats"""
+        # UUID-like format
+        cancel1 = CancelOrderRequest(cl_ord_id="550e8400-e29b-41d4-a716-446655440000")
+        assert cancel1.cl_ord_id == "550e8400-e29b-41d4-a716-446655440000"
+
+        # Short alphanumeric
+        cancel2 = CancelOrderRequest(cl_ord_id="order-123")
+        assert cancel2.cl_ord_id == "order-123"
+
+        # 18-character ASCII
+        cancel3 = CancelOrderRequest(cl_ord_id="ABCDEF1234567890XY")
+        assert cancel3.cl_ord_id == "ABCDEF1234567890XY"
+
+
+class TestCancelOrderResponse:
+    """Tests for CancelOrder response schemas"""
+
+    def test_success_response_parsing_single_order(self):
+        """Test parsing a successful single order cancellation response"""
+        kraken_response = {
+            "error": [],
+            "result": {
+                "count": 1,
+            },
+        }
+
+        response = CancelOrderResponse.from_response(kraken_response)
+
+        assert response.is_success is True
+        assert response.success is not None
+        assert response.error is None
+        assert response.success.count == 1
+        assert response.success.pending is None
+
+    def test_success_response_parsing_multiple_orders(self):
+        """Test parsing a successful multiple order cancellation response"""
+        kraken_response = {
+            "error": [],
+            "result": {
+                "count": 5,
+            },
+        }
+
+        response = CancelOrderResponse.from_response(kraken_response)
+
+        assert response.is_success is True
+        assert response.success.count == 5
+
+    def test_success_response_with_pending_true(self):
+        """Test parsing a success response with pending cancellation"""
+        kraken_response = {
+            "error": [],
+            "result": {
+                "count": 2,
+                "pending": True,
+            },
+        }
+
+        response = CancelOrderResponse.from_response(kraken_response)
+
+        assert response.is_success is True
+        assert response.success.count == 2
+        assert response.success.pending is True
+
+    def test_success_response_with_pending_false(self):
+        """Test parsing a success response with pending = false"""
+        kraken_response = {
+            "error": [],
+            "result": {
+                "count": 1,
+                "pending": False,
+            },
+        }
+
+        response = CancelOrderResponse.from_response(kraken_response)
+
+        assert response.is_success is True
+        assert response.success.count == 1
+        assert response.success.pending is False
+
+    def test_error_response_parsing(self):
+        """Test parsing an error response"""
+        kraken_response = {
+            "error": ["EOrder:Unknown order"],
+        }
+
+        response = CancelOrderResponse.from_response(kraken_response)
+
+        assert response.is_success is False
+        assert response.success is None
+        assert response.error is not None
+        assert "EOrder:Unknown order" in response.error.error
+
+    def test_multiple_errors(self):
+        """Test parsing response with multiple errors"""
+        kraken_response = {
+            "error": [
+                "EGeneral:Invalid arguments",
+                "EOrder:Unknown order",
+            ],
+        }
+
+        response = CancelOrderResponse.from_response(kraken_response)
+
+        assert response.is_success is False
+        assert len(response.error.error) == 2
+        assert "EGeneral:Invalid arguments" in response.error.error
+        assert "EOrder:Unknown order" in response.error.error
+
+    def test_from_json_string(self):
+        """Test parsing from JSON string"""
+        json_response = json.dumps(
+            {
+                "error": [],
+                "result": {
+                    "count": 3,
+                    "pending": False,
+                },
+            }
+        )
+
+        response = CancelOrderResponse.from_response(json_response)
+
+        assert response.is_success is True
+        assert response.success.count == 3
+        assert response.success.pending is False
+
+    def test_invalid_response_format(self):
+        """Test that invalid response format raises appropriate error"""
+        invalid_response = {"error": []}  # Missing 'result'
+
+        with pytest.raises(ValueError, match="missing 'result'"):
+            CancelOrderResponse.from_response(invalid_response)
+
+    def test_success_model_direct_instantiation(self):
+        """Test creating CancelOrderSuccess directly"""
+        success = CancelOrderSuccess(count=10)
+
+        assert success.count == 10
+        assert success.pending is None
+
+        success2 = CancelOrderSuccess(count=5, pending=True)
+
+        assert success2.count == 5
+        assert success2.pending is True
+
+    def test_error_model_direct_instantiation(self):
+        """Test creating error response directly"""
+        error = ResponseErrorSchema(error=["EOrder:Unknown order"])
+
+        assert len(error.error) == 1
+        assert error.error[0] == "EOrder:Unknown order"
+
+    def test_response_wrapper_direct_instantiation(self):
+        """Test creating CancelOrderResponse wrapper directly"""
+        success = CancelOrderSuccess(count=3, pending=False)
+        response = CancelOrderResponse(success=success)
+
+        assert response.is_success is True
+        assert response.success.count == 3
+
+        error = ResponseErrorSchema(error=["Test error"])
+        response2 = CancelOrderResponse(error=error)
+
+        assert response2.is_success is False
+        assert response2.error.error[0] == "Test error"
+
+    def test_zero_count_response(self):
+        """Test handling response with zero count (edge case)"""
+        kraken_response = {
+            "error": [],
+            "result": {
+                "count": 0,
+            },
+        }
+
+        response = CancelOrderResponse.from_response(kraken_response)
+
+        # Even with zero count, it's still a successful response
+        assert response.is_success is True
+        assert response.success.count == 0
+
+
+class TestConcurrentCancelScenarios:
+    """Tests for concurrent and async cancel usage scenarios"""
+
+    def test_multiple_cancels_no_collision(self):
+        """Test that creating multiple cancel requests simultaneously doesn't cause issues"""
+        # Create multiple cancel requests in rapid succession
+        cancels = []
+        for i in range(10):
+            if i % 2 == 0:
+                cancel = CancelOrderRequest(txid=f"ORDER-{i}")
+            else:
+                cancel = CancelOrderRequest(txid=10000 + i)
+            cancels.append(cancel)
+
+        # All cancels should be valid
+        assert len(cancels) == 10
+
+        # No nonce field should exist (nonce handled by REST client)
+        for cancel in cancels:
+            assert not hasattr(cancel, "nonce")
+
+    def test_mixed_identifier_types_concurrent(self):
+        """Test concurrent creation with mixed identifier types"""
+        import concurrent.futures
+
+        def create_cancel(i):
+            if i % 3 == 0:
+                return CancelOrderRequest(txid=f"TXID-{i}")
+            elif i % 3 == 1:
+                return CancelOrderRequest(txid=50000 + i)
+            else:
+                return CancelOrderRequest(cl_ord_id=f"CLIENT-ORDER-{i}")
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            cancels = list(executor.map(create_cancel, range(30)))
+
+        assert len(cancels) == 30
+
+        # Check that different identifier types are properly distributed
+        string_txid_cancels = [
+            c for c in cancels if isinstance(c.txid, str) and c.txid is not None
+        ]
+        int_txid_cancels = [c for c in cancels if isinstance(c.txid, int) and c.txid is not None]
+        cl_ord_id_cancels = [c for c in cancels if c.cl_ord_id is not None]
+
+        assert len(string_txid_cancels) == 10
+        assert len(int_txid_cancels) == 10
+        assert len(cl_ord_id_cancels) == 10
+
+    def test_rapid_cancel_creation(self):
+        """Test rapid creation of cancel requests"""
+        cancels = []
+        for i in range(100):
+            cancel = CancelOrderRequest(txid=f"RAPID-{i}")
+            cancels.append(cancel)
+
+        # All should be valid
+        assert len(cancels) == 100
+
+        # All txids should be unique
+        txids = [c.txid for c in cancels]
+        assert len(set(txids)) == 100
+
+    def test_concurrent_serialization(self):
+        """Test concurrent serialization of cancel requests"""
+        import concurrent.futures
+
+        def create_and_serialize(i):
+            cancel = CancelOrderRequest(txid=f"SERIAL-{i}")
+            return cancel.to_api_dict()
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+            dicts = list(executor.map(create_and_serialize, range(50)))
+
+        assert len(dicts) == 50
+
+        # All should have valid structure
+        for d in dicts:
+            assert "txid" in d
+            assert d["txid"].startswith("SERIAL-")
