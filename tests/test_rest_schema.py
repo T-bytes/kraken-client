@@ -22,6 +22,9 @@ from kraken.rest.schema.trading import (
     CancelOrderRequest,
     CancelOrderResponse,
     CancelOrderSuccess,
+    GetWebSocketsTokenRequest,
+    GetWebSocketsTokenResponse,
+    GetWebSocketsTokenSuccess,
     ResponseErrorSchema,
 )
 
@@ -2160,3 +2163,291 @@ class TestConcurrentCancelAllOrdersAfterScenarios:
                 assert req.timeout == 60
             else:
                 assert req.timeout == 0
+
+
+class TestGetWebSocketsTokenRequest:
+    """Tests for GetWebSocketsTokenRequest schema"""
+
+    def test_minimal_valid_request(self):
+        """Test creating a minimal valid request"""
+        ws_token_request = GetWebSocketsTokenRequest()
+
+        # Should be valid with no required fields
+        assert ws_token_request is not None
+
+    def test_no_nonce_field(self):
+        """Test that nonce is not present in schema (handled by REST client)"""
+        ws_token_request = GetWebSocketsTokenRequest()
+
+        # Should not have a nonce attribute
+        assert not hasattr(ws_token_request, "nonce")
+
+    def test_to_api_dict_method(self):
+        """Test to_api_dict() serialization helper method"""
+        ws_token_request = GetWebSocketsTokenRequest()
+
+        # to_api_dict() should use by_alias=True and exclude_none=True
+        data = ws_token_request.to_api_dict()
+
+        # Should return an empty dict (no fields except nonce which is added by client)
+        assert data == {}
+
+        # Test exclude_none=False
+        data_with_none = ws_token_request.to_api_dict(exclude_none=False)
+        assert data_with_none == {}
+
+    def test_multiple_instances(self):
+        """Test creating multiple GetWebSocketsTokenRequest instances"""
+        requests = [GetWebSocketsTokenRequest() for _ in range(10)]
+
+        # All should be valid
+        assert len(requests) == 10
+        for req in requests:
+            assert req is not None
+
+
+class TestGetWebSocketsTokenResponse:
+    """Tests for GetWebSocketsToken response schemas"""
+
+    def test_success_response_parsing(self):
+        """Test parsing a successful response"""
+        kraken_response = {
+            "error": [],
+            "result": {
+                "token": "1Dwc4lzSwNWOAwkMdqhssNNFhs1ed606d1WcF3XfEMw",
+                "expires": 900,
+            },
+        }
+
+        response = GetWebSocketsTokenResponse.from_response(kraken_response)
+
+        assert response.is_success is True
+        assert response.success is not None
+        assert response.error is None
+        assert response.success.token == "1Dwc4lzSwNWOAwkMdqhssNNFhs1ed606d1WcF3XfEMw"
+        assert response.success.expires == 900
+
+    def test_error_response_parsing(self):
+        """Test parsing an error response"""
+        kraken_response = {
+            "error": ["EGeneral:Permission denied"],
+        }
+
+        response = GetWebSocketsTokenResponse.from_response(kraken_response)
+
+        assert response.is_success is False
+        assert response.success is None
+        assert response.error is not None
+        assert "EGeneral:Permission denied" in response.error.error
+
+    def test_multiple_errors(self):
+        """Test parsing response with multiple errors"""
+        kraken_response = {
+            "error": [
+                "EGeneral:Invalid arguments",
+                "EAPI:Invalid key",
+            ],
+        }
+
+        response = GetWebSocketsTokenResponse.from_response(kraken_response)
+
+        assert response.is_success is False
+        assert len(response.error.error) == 2
+        assert "EGeneral:Invalid arguments" in response.error.error
+        assert "EAPI:Invalid key" in response.error.error
+
+    def test_from_json_string(self):
+        """Test parsing from JSON string"""
+        json_response = json.dumps(
+            {
+                "error": [],
+                "result": {
+                    "token": "testTokenABC123xyz789",
+                    "expires": 900,
+                },
+            }
+        )
+
+        response = GetWebSocketsTokenResponse.from_response(json_response)
+
+        assert response.is_success is True
+        assert response.success.token == "testTokenABC123xyz789"
+        assert response.success.expires == 900
+
+    def test_invalid_response_format(self):
+        """Test that invalid response format raises appropriate error"""
+        invalid_response = {"error": []}  # Missing 'result'
+
+        with pytest.raises(ValueError, match="missing 'result'"):
+            GetWebSocketsTokenResponse.from_response(invalid_response)
+
+    def test_success_model_direct_instantiation(self):
+        """Test creating GetWebSocketsTokenSuccess directly"""
+        success = GetWebSocketsTokenSuccess(token="directTokenExample123", expires=900)
+
+        assert success.token == "directTokenExample123"
+        assert success.expires == 900
+
+    def test_error_model_direct_instantiation(self):
+        """Test creating error response directly"""
+        error = ResponseErrorSchema(error=["EGeneral:Permission denied"])
+
+        assert len(error.error) == 1
+        assert error.error[0] == "EGeneral:Permission denied"
+
+    def test_response_wrapper_direct_instantiation(self):
+        """Test creating GetWebSocketsTokenResponse wrapper directly"""
+        success = GetWebSocketsTokenSuccess(token="wrapperTest", expires=900)
+        response = GetWebSocketsTokenResponse(success=success)
+
+        assert response.is_success is True
+        assert response.success.token == "wrapperTest"
+
+        error = ResponseErrorSchema(error=["Test error"])
+        response2 = GetWebSocketsTokenResponse(error=error)
+
+        assert response2.is_success is False
+        assert response2.error.error[0] == "Test error"
+
+    def test_token_format(self):
+        """Test that token is string format"""
+        kraken_response = {
+            "error": [],
+            "result": {
+                "token": "aBcDeF123456789",
+                "expires": 900,
+            },
+        }
+
+        response = GetWebSocketsTokenResponse.from_response(kraken_response)
+
+        assert response.is_success is True
+        assert isinstance(response.success.token, str)
+        assert len(response.success.token) > 0
+
+    def test_expires_value(self):
+        """Test that expires is integer value (typically 900)"""
+        kraken_response = {
+            "error": [],
+            "result": {
+                "token": "tokenExample",
+                "expires": 900,
+            },
+        }
+
+        response = GetWebSocketsTokenResponse.from_response(kraken_response)
+
+        assert response.is_success is True
+        assert isinstance(response.success.expires, int)
+        assert response.success.expires == 900
+
+    def test_different_expires_values(self):
+        """Test parsing with different expires values"""
+        # While typically 900, test flexibility for other values
+        test_expires = [300, 600, 900, 1800]
+
+        for expires_val in test_expires:
+            kraken_response = {
+                "error": [],
+                "result": {
+                    "token": f"token_{expires_val}",
+                    "expires": expires_val,
+                },
+            }
+
+            response = GetWebSocketsTokenResponse.from_response(kraken_response)
+
+            assert response.is_success is True
+            assert response.success.expires == expires_val
+
+    def test_long_token_string(self):
+        """Test handling of long token strings"""
+        long_token = "a" * 100  # Long token string
+        kraken_response = {
+            "error": [],
+            "result": {
+                "token": long_token,
+                "expires": 900,
+            },
+        }
+
+        response = GetWebSocketsTokenResponse.from_response(kraken_response)
+
+        assert response.is_success is True
+        assert response.success.token == long_token
+        assert len(response.success.token) == 100
+
+
+class TestConcurrentGetWebSocketsTokenScenarios:
+    """Tests for concurrent and async GetWebSocketsToken usage scenarios"""
+
+    def test_multiple_requests_no_collision(self):
+        """Test that creating multiple requests simultaneously doesn't cause issues"""
+        # Create multiple requests in rapid succession
+        requests = []
+        for i in range(10):
+            req = GetWebSocketsTokenRequest()
+            requests.append(req)
+
+        # All requests should be valid
+        assert len(requests) == 10
+
+        # No nonce field should exist (nonce handled by REST client)
+        for req in requests:
+            assert not hasattr(req, "nonce")
+
+    def test_concurrent_serialization(self):
+        """Test concurrent serialization of requests"""
+        import concurrent.futures
+
+        def create_and_serialize(i):
+            req = GetWebSocketsTokenRequest()
+            return req.to_api_dict()
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+            dicts = list(executor.map(create_and_serialize, range(50)))
+
+        assert len(dicts) == 50
+
+        # All should have valid structure (empty dict)
+        for d in dicts:
+            assert d == {}
+
+    def test_rapid_request_creation(self):
+        """Test rapid creation of WebSocket token requests"""
+        requests = []
+        for i in range(100):
+            req = GetWebSocketsTokenRequest()
+            requests.append(req)
+
+        # All should be valid
+        assert len(requests) == 100
+
+        # All should serialize to empty dict
+        for req in requests:
+            assert req.to_api_dict() == {}
+
+    def test_concurrent_response_parsing(self):
+        """Test concurrent parsing of responses"""
+        import concurrent.futures
+
+        def parse_response(i):
+            kraken_response = {
+                "error": [],
+                "result": {
+                    "token": f"concurrent_token_{i}",
+                    "expires": 900,
+                },
+            }
+            return GetWebSocketsTokenResponse.from_response(kraken_response)
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+            responses = list(executor.map(parse_response, range(50)))
+
+        assert len(responses) == 50
+
+        # All should be successful
+        for i, response in enumerate(responses):
+            assert response.is_success is True
+            assert response.success.token == f"concurrent_token_{i}"
+            assert response.success.expires == 900
