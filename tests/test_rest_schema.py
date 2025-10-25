@@ -7,18 +7,27 @@ import pytest
 from pydantic import ValidationError
 
 from kraken.rest.schema.trading import (
+    AddOrderBatchRequest,
+    AddOrderBatchResponse,
+    AddOrderBatchSuccess,
     AddOrderRequest,
     AddOrderResponse,
     AddOrderSuccess,
     AmendOrderRequest,
     AmendOrderResponse,
     AmendOrderSuccess,
+    BatchOrderItem,
+    BatchOrderResult,
     CancelAllOrdersAfterRequest,
     CancelAllOrdersAfterResponse,
     CancelAllOrdersAfterSuccess,
     CancelAllRequest,
     CancelAllResponse,
     CancelAllSuccess,
+    CancelOrderBatchItem,
+    CancelOrderBatchRequest,
+    CancelOrderBatchResponse,
+    CancelOrderBatchSuccess,
     CancelOrderRequest,
     CancelOrderResponse,
     CancelOrderSuccess,
@@ -2451,3 +2460,744 @@ class TestConcurrentGetWebSocketsTokenScenarios:
             assert response.is_success is True
             assert response.success.token == f"concurrent_token_{i}"
             assert response.success.expires == 900
+
+
+class TestBatchOrderItem:
+    """Tests for BatchOrderItem schema"""
+
+    def test_minimal_valid_item(self):
+        """Test creating a minimal valid batch order item"""
+        item = BatchOrderItem(
+            ordertype="market",
+            type="buy",
+            volume=1.5,
+        )
+
+        assert item.ordertype == "market"
+        assert item.type == "buy"
+        assert item.volume == "1.5"
+
+    def test_field_inheritance_from_add_order(self):
+        """Test that validators work same as AddOrderRequest"""
+        item = BatchOrderItem(
+            ordertype="limit",
+            type="sell",
+            volume=2.0,
+            price="50000",
+        )
+
+        assert item.ordertype == "limit"
+        assert item.volume == "2.0"
+        assert item.price == "50000"
+
+    def test_volume_conversion(self):
+        """Test that volume is converted to string"""
+        # Integer volume
+        item1 = BatchOrderItem(ordertype="market", type="buy", volume=3)
+        assert item1.volume == "3"
+
+        # Float volume
+        item2 = BatchOrderItem(ordertype="market", type="buy", volume=1.25)
+        assert item2.volume == "1.25"
+
+    def test_ordertype_normalization(self):
+        """Test that ordertype is normalized to lowercase"""
+        item = BatchOrderItem(
+            ordertype="LIMIT",
+            type="buy",
+            volume=1,
+            price="50000",
+        )
+        assert item.ordertype == "limit"
+
+    def test_field_dependency_validation(self):
+        """Test that limit orders require price field"""
+        with pytest.raises(ValidationError, match="Limit orders require 'price'"):
+            BatchOrderItem(
+                ordertype="limit",
+                type="buy",
+                volume=1,
+            )
+
+    def test_stop_loss_limit_validation(self):
+        """Test that stop-loss-limit requires both price and price2"""
+        with pytest.raises(
+            ValidationError, match="stop-loss-limit orders require both 'price' and 'price2'"
+        ):
+            BatchOrderItem(
+                ordertype="stop-loss-limit",
+                type="sell",
+                volume=1,
+                price="48000",
+            )
+
+    def test_iceberg_display_volume(self):
+        """Test iceberg order display volume floor enforcement"""
+        # Display volume too small
+        item1 = BatchOrderItem(
+            ordertype="iceberg",
+            type="buy",
+            volume=15,
+            displayvol=0.5,
+            price="50000",
+        )
+        assert float(item1.displayvol) == 1.0
+
+    def test_userref_cl_ord_id_mutually_exclusive(self):
+        """Test that userref and cl_ord_id cannot both be set"""
+        with pytest.raises(ValidationError, match="mutually exclusive"):
+            BatchOrderItem(
+                ordertype="market",
+                type="buy",
+                volume=1,
+                userref=123,
+                cl_ord_id="order-abc",
+            )
+
+
+class TestAddOrderBatchRequest:
+    """Tests for AddOrderBatchRequest schema"""
+
+    def test_minimal_valid_batch(self):
+        """Test creating a minimal valid batch with 2 orders"""
+        batch = AddOrderBatchRequest(
+            orders=[
+                BatchOrderItem(ordertype="market", type="buy", volume=1.0),
+                BatchOrderItem(ordertype="market", type="buy", volume=0.5),
+            ],
+            pair="XBTUSD",
+        )
+
+        assert len(batch.orders) == 2
+        assert batch.pair == "XBTUSD"
+
+    def test_maximum_batch_size(self):
+        """Test batch with maximum 15 orders"""
+        orders = [BatchOrderItem(ordertype="market", type="buy", volume=1.0) for _ in range(15)]
+        batch = AddOrderBatchRequest(orders=orders, pair="XBTUSD")
+
+        assert len(batch.orders) == 15
+
+    def test_batch_size_too_small(self):
+        """Test that batch with 1 order is rejected"""
+        with pytest.raises(ValidationError, match="at least 2 orders"):
+            AddOrderBatchRequest(
+                orders=[BatchOrderItem(ordertype="market", type="buy", volume=1.0)],
+                pair="XBTUSD",
+            )
+
+    def test_batch_size_too_large(self):
+        """Test that batch with 16+ orders is rejected"""
+        orders = [BatchOrderItem(ordertype="market", type="buy", volume=1.0) for _ in range(16)]
+        with pytest.raises(ValidationError, match="at most 15 orders"):
+            AddOrderBatchRequest(orders=orders, pair="XBTUSD")
+
+    def test_single_pair_requirement(self):
+        """Test that all orders are for a single pair"""
+        batch = AddOrderBatchRequest(
+            orders=[
+                BatchOrderItem(ordertype="market", type="buy", volume=1.0),
+                BatchOrderItem(ordertype="market", type="sell", volume=0.5),
+            ],
+            pair="ETHUSD",
+        )
+
+        assert batch.pair == "ETHUSD"
+
+    def test_deadline_validation(self):
+        """Test deadline RFC3339 format and timezone requirement"""
+        now = datetime.now(timezone.utc)
+        valid_deadline = (now + timedelta(seconds=10)).isoformat()
+
+        batch = AddOrderBatchRequest(
+            orders=[
+                BatchOrderItem(ordertype="market", type="buy", volume=1.0),
+                BatchOrderItem(ordertype="market", type="buy", volume=0.5),
+            ],
+            pair="XBTUSD",
+            deadline=valid_deadline,
+        )
+
+        assert batch.deadline is not None
+
+    def test_deadline_bounding(self):
+        """Test that deadline is bounded between 2-60 seconds"""
+        now = datetime.now(timezone.utc)
+        too_far = (now + timedelta(seconds=120)).isoformat()
+
+        batch = AddOrderBatchRequest(
+            orders=[
+                BatchOrderItem(ordertype="market", type="buy", volume=1.0),
+                BatchOrderItem(ordertype="market", type="buy", volume=0.5),
+            ],
+            pair="XBTUSD",
+            deadline=too_far,
+        )
+
+        deadline = datetime.fromisoformat(batch.deadline)
+        max_deadline = now + timedelta(seconds=60)
+        assert deadline <= max_deadline + timedelta(milliseconds=100)
+
+    def test_validate_flag(self):
+        """Test validation only mode"""
+        batch = AddOrderBatchRequest(
+            orders=[
+                BatchOrderItem(ordertype="market", type="buy", volume=1.0),
+                BatchOrderItem(ordertype="market", type="buy", volume=0.5),
+            ],
+            pair="XBTUSD",
+            validate=True,
+        )
+
+        assert batch.validate is True
+
+    def test_asset_class_for_xstocks(self):
+        """Test asset_class parameter for tokenized assets"""
+        batch = AddOrderBatchRequest(
+            orders=[
+                BatchOrderItem(ordertype="market", type="buy", volume=10),
+                BatchOrderItem(ordertype="market", type="buy", volume=5),
+            ],
+            pair="TSLA/USD",
+            asset_class="tokenized_asset",
+        )
+
+        assert batch.asset_class == "tokenized_asset"
+
+    def test_to_api_dict_serialization(self):
+        """Test to_api_dict() serialization"""
+        batch = AddOrderBatchRequest(
+            orders=[
+                BatchOrderItem(ordertype="limit", type="buy", volume=1.0, price="50000"),
+                BatchOrderItem(ordertype="limit", type="buy", volume=0.5, price="49000"),
+            ],
+            pair="XBTUSD",
+        )
+
+        data = batch.to_api_dict()
+
+        assert "orders" in data
+        assert "pair" in data
+        assert data["pair"] == "XBTUSD"
+        assert len(data["orders"]) == 2
+
+    def test_mixed_order_types(self):
+        """Test batch with mixed order types"""
+        batch = AddOrderBatchRequest(
+            orders=[
+                BatchOrderItem(ordertype="market", type="buy", volume=1.0),
+                BatchOrderItem(ordertype="limit", type="sell", volume=1.0, price="55000"),
+                BatchOrderItem(ordertype="stop-loss", type="sell", volume=1.0, price="45000"),
+            ],
+            pair="XBTUSD",
+        )
+
+        assert batch.orders[0].ordertype == "market"
+        assert batch.orders[1].ordertype == "limit"
+        assert batch.orders[2].ordertype == "stop-loss"
+
+    def test_no_nonce_field(self):
+        """Test that nonce is not present in schema"""
+        batch = AddOrderBatchRequest(
+            orders=[
+                BatchOrderItem(ordertype="market", type="buy", volume=1.0),
+                BatchOrderItem(ordertype="market", type="buy", volume=0.5),
+            ],
+            pair="XBTUSD",
+        )
+
+        assert not hasattr(batch, "nonce")
+
+
+class TestAddOrderBatchResponse:
+    """Tests for AddOrderBatch response schemas"""
+
+    def test_success_response_all_orders(self):
+        """Test parsing response where all orders succeeded"""
+        kraken_response = {
+            "error": [],
+            "result": {
+                "orders": [
+                    {"txid": "ORDER-1", "descr": {"order": "buy 1.0 XBTUSD @ market"}},
+                    {"txid": "ORDER-2", "descr": {"order": "buy 0.5 XBTUSD @ market"}},
+                ]
+            },
+        }
+
+        response = AddOrderBatchResponse.from_response(kraken_response)
+
+        assert response.is_success is True
+        assert len(response.success.orders) == 2
+        assert response.success.orders[0].txid == "ORDER-1"
+        assert response.success.orders[1].txid == "ORDER-2"
+        assert response.success.orders[0].is_success is True
+        assert response.success.orders[1].is_success is True
+
+    def test_partial_success_response(self):
+        """Test parsing response where some orders failed"""
+        kraken_response = {
+            "error": [],
+            "result": {
+                "orders": [
+                    {"txid": "ORDER-1", "descr": {"order": "buy 1.0 XBTUSD @ market"}},
+                    {"error": "Insufficient funds"},
+                ]
+            },
+        }
+
+        response = AddOrderBatchResponse.from_response(kraken_response)
+
+        assert response.is_success is True
+        assert len(response.success.orders) == 2
+        assert response.success.orders[0].is_success is True
+        assert response.success.orders[1].is_success is False
+        assert response.success.orders[1].error == "Insufficient funds"
+
+    def test_all_orders_failed_validation(self):
+        """Test parsing response where whole batch rejected"""
+        kraken_response = {"error": ["EGeneral:Invalid arguments"]}
+
+        response = AddOrderBatchResponse.from_response(kraken_response)
+
+        assert response.is_success is False
+        assert response.error is not None
+        assert "EGeneral:Invalid arguments" in response.error.error
+
+    def test_error_response_parsing(self):
+        """Test parsing batch-level error response"""
+        kraken_response = {"error": ["EOrder:Invalid pair"]}
+
+        response = AddOrderBatchResponse.from_response(kraken_response)
+
+        assert response.is_success is False
+        assert "EOrder:Invalid pair" in response.error.error
+
+    def test_from_json_string(self):
+        """Test parsing from JSON string"""
+        json_response = json.dumps(
+            {
+                "error": [],
+                "result": {
+                    "orders": [
+                        {"txid": "TX-1", "descr": {"order": "buy"}},
+                        {"txid": "TX-2", "descr": {"order": "sell"}},
+                    ]
+                },
+            }
+        )
+
+        response = AddOrderBatchResponse.from_response(json_response)
+
+        assert response.is_success is True
+        assert len(response.success.orders) == 2
+
+    def test_invalid_response_format(self):
+        """Test that invalid response format raises error"""
+        invalid_response = {"error": []}
+
+        with pytest.raises(ValueError, match="missing 'result'"):
+            AddOrderBatchResponse.from_response(invalid_response)
+
+    def test_order_result_ordering(self):
+        """Test that results match request order"""
+        kraken_response = {
+            "error": [],
+            "result": {
+                "orders": [
+                    {"txid": "FIRST"},
+                    {"txid": "SECOND"},
+                    {"txid": "THIRD"},
+                ]
+            },
+        }
+
+        response = AddOrderBatchResponse.from_response(kraken_response)
+
+        assert response.success.orders[0].txid == "FIRST"
+        assert response.success.orders[1].txid == "SECOND"
+        assert response.success.orders[2].txid == "THIRD"
+
+    def test_individual_order_error(self):
+        """Test individual order with error field"""
+        kraken_response = {
+            "error": [],
+            "result": {"orders": [{"error": "EOrder:Rate limit exceeded"}]},
+        }
+
+        response = AddOrderBatchResponse.from_response(kraken_response)
+
+        assert response.is_success is True
+        assert response.success.orders[0].error == "EOrder:Rate limit exceeded"
+        assert response.success.orders[0].txid is None
+
+    def test_txid_and_descr_fields(self):
+        """Test successful order with txid and descr fields"""
+        kraken_response = {
+            "error": [],
+            "result": {
+                "orders": [
+                    {
+                        "txid": "ABC-123",
+                        "descr": {"order": "buy 1.5 XBTUSD @ limit 50000"},
+                    }
+                ]
+            },
+        }
+
+        response = AddOrderBatchResponse.from_response(kraken_response)
+
+        order_result = response.success.orders[0]
+        assert order_result.txid == "ABC-123"
+        assert order_result.descr["order"] == "buy 1.5 XBTUSD @ limit 50000"
+        assert order_result.is_success is True
+
+    def test_direct_instantiation(self):
+        """Test creating models directly"""
+        result1 = BatchOrderResult(txid="TX-1", descr={"order": "buy"}, error=None)
+        result2 = BatchOrderResult(txid=None, descr=None, error="Failed")
+
+        success = AddOrderBatchSuccess(orders=[result1, result2])
+        response = AddOrderBatchResponse(success=success)
+
+        assert response.is_success is True
+        assert len(response.success.orders) == 2
+
+
+class TestConcurrentAddOrderBatchScenarios:
+    """Tests for concurrent AddOrderBatch usage scenarios"""
+
+    def test_multiple_batches_no_collision(self):
+        """Test creating multiple batches simultaneously"""
+        batches = []
+        for i in range(10):
+            batch = AddOrderBatchRequest(
+                orders=[
+                    BatchOrderItem(ordertype="market", type="buy", volume=1.0 + i * 0.1),
+                    BatchOrderItem(ordertype="market", type="sell", volume=0.5),
+                ],
+                pair="XBTUSD",
+            )
+            batches.append(batch)
+
+        assert len(batches) == 10
+        for batch in batches:
+            assert not hasattr(batch, "nonce")
+
+    def test_concurrent_batch_creation(self):
+        """Test concurrent batch creation with ThreadPoolExecutor"""
+        import concurrent.futures
+
+        def create_batch(i):
+            return AddOrderBatchRequest(
+                orders=[
+                    BatchOrderItem(ordertype="market", type="buy", volume=1.0),
+                    BatchOrderItem(ordertype="market", type="buy", volume=0.5),
+                ],
+                pair="XBTUSD",
+            )
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            batches = list(executor.map(create_batch, range(20)))
+
+        assert len(batches) == 20
+
+    def test_rapid_batch_serialization(self):
+        """Test rapid serialization of batches"""
+        import concurrent.futures
+
+        def create_and_serialize(i):
+            batch = AddOrderBatchRequest(
+                orders=[
+                    BatchOrderItem(ordertype="limit", type="buy", volume=1.0, price="50000"),
+                    BatchOrderItem(ordertype="limit", type="buy", volume=0.5, price="49000"),
+                ],
+                pair="XBTUSD",
+            )
+            return batch.to_api_dict()
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+            dicts = list(executor.map(create_and_serialize, range(50)))
+
+        assert len(dicts) == 50
+        for d in dicts:
+            assert "orders" in d
+            assert "pair" in d
+
+    def test_large_batch_handling(self):
+        """Test batch with maximum 15 orders"""
+        orders = [
+            BatchOrderItem(
+                ordertype="limit", type="buy", volume=1.0 + i * 0.1, price=f"{50000 + i * 100}"
+            )
+            for i in range(15)
+        ]
+        batch = AddOrderBatchRequest(orders=orders, pair="XBTUSD")
+
+        assert len(batch.orders) == 15
+
+        data = batch.to_api_dict()
+        assert len(data["orders"]) == 15
+
+
+class TestCancelOrderBatchItem:
+    """Tests for CancelOrderBatchItem schema"""
+
+    def test_with_txid_string(self):
+        """Test creating item with string transaction ID"""
+        item = CancelOrderBatchItem(txid="OUF4EM-FRGI2-MQMWZD")
+
+        assert item.txid == "OUF4EM-FRGI2-MQMWZD"
+        assert item.cl_ord_id is None
+
+    def test_with_txid_integer(self):
+        """Test creating item with integer userref"""
+        item = CancelOrderBatchItem(txid=12345)
+
+        assert item.txid == 12345
+        assert isinstance(item.txid, int)
+
+    def test_with_cl_ord_id(self):
+        """Test creating item with client order ID"""
+        item = CancelOrderBatchItem(cl_ord_id="my-order-123")
+
+        assert item.cl_ord_id == "my-order-123"
+        assert item.txid is None
+
+    def test_txid_normalization(self):
+        """Test that numeric string txids are converted to int"""
+        item = CancelOrderBatchItem(txid="67890")
+
+        assert item.txid == 67890
+        assert isinstance(item.txid, int)
+
+    def test_mutual_exclusivity(self):
+        """Test that txid and cl_ord_id cannot both be set"""
+        with pytest.raises(ValidationError, match="mutually exclusive"):
+            CancelOrderBatchItem(txid="ABC-123", cl_ord_id="order-xyz")
+
+    def test_at_least_one_required(self):
+        """Test that at least one identifier must be provided"""
+        with pytest.raises(ValidationError, match="Either 'txid' or 'cl_ord_id' must be provided"):
+            CancelOrderBatchItem()
+
+
+class TestCancelOrderBatchRequest:
+    """Tests for CancelOrderBatchRequest schema"""
+
+    def test_with_orders_list(self):
+        """Test cancel batch with orders list"""
+        batch = CancelOrderBatchRequest(
+            orders=[
+                CancelOrderBatchItem(txid="ORDER-1"),
+                CancelOrderBatchItem(txid="ORDER-2"),
+            ]
+        )
+
+        assert len(batch.orders) == 2
+        assert batch.cl_ord_ids is None
+
+    def test_with_cl_ord_ids_list(self):
+        """Test cancel batch with cl_ord_ids list"""
+        batch = CancelOrderBatchRequest(cl_ord_ids=["order-1", "order-2", "order-3"])
+
+        assert len(batch.cl_ord_ids) == 3
+        assert batch.orders is None
+
+    def test_maximum_50_items(self):
+        """Test batch with maximum 50 items"""
+        orders = [CancelOrderBatchItem(txid=f"ORDER-{i}") for i in range(50)]
+        batch = CancelOrderBatchRequest(orders=orders)
+
+        assert len(batch.orders) == 50
+
+    def test_exceeds_50_items(self):
+        """Test that batch with 51+ items is rejected"""
+        orders = [CancelOrderBatchItem(txid=f"ORDER-{i}") for i in range(51)]
+
+        with pytest.raises(ValidationError, match="at most 50 total items"):
+            CancelOrderBatchRequest(orders=orders)
+
+    def test_mixed_txid_types(self):
+        """Test batch with string txids and integer userrefs"""
+        batch = CancelOrderBatchRequest(
+            orders=[
+                CancelOrderBatchItem(txid="ABC-123"),
+                CancelOrderBatchItem(txid=99999),
+                CancelOrderBatchItem(txid="DEF-456"),
+            ]
+        )
+
+        assert isinstance(batch.orders[0].txid, str)
+        assert isinstance(batch.orders[1].txid, int)
+        assert isinstance(batch.orders[2].txid, str)
+
+    def test_at_least_one_field_required(self):
+        """Test that orders or cl_ord_ids must be provided"""
+        with pytest.raises(
+            ValidationError, match="Either 'orders' or 'cl_ord_ids' must be provided"
+        ):
+            CancelOrderBatchRequest()
+
+    def test_to_api_dict_with_orders(self):
+        """Test serialization with orders list"""
+        batch = CancelOrderBatchRequest(
+            orders=[
+                CancelOrderBatchItem(txid="ORDER-1"),
+                CancelOrderBatchItem(txid="ORDER-2"),
+            ]
+        )
+
+        data = batch.to_api_dict()
+
+        assert "orders" in data
+        assert len(data["orders"]) == 2
+
+    def test_to_api_dict_with_cl_ord_ids(self):
+        """Test serialization with cl_ord_ids"""
+        batch = CancelOrderBatchRequest(cl_ord_ids=["order-1", "order-2"])
+
+        data = batch.to_api_dict()
+
+        assert "cl_ord_ids" in data
+        assert len(data["cl_ord_ids"]) == 2
+
+    def test_no_nonce_field(self):
+        """Test that nonce is not present in schema"""
+        batch = CancelOrderBatchRequest(orders=[CancelOrderBatchItem(txid="ORDER-1")])
+
+        assert not hasattr(batch, "nonce")
+
+    def test_combined_orders_and_cl_ord_ids(self):
+        """Test batch with both orders and cl_ord_ids"""
+        batch = CancelOrderBatchRequest(
+            orders=[CancelOrderBatchItem(txid="ORDER-1")], cl_ord_ids=["client-order-1"]
+        )
+
+        assert len(batch.orders) == 1
+        assert len(batch.cl_ord_ids) == 1
+
+    def test_combined_exceeds_50(self):
+        """Test that combined orders + cl_ord_ids cannot exceed 50"""
+        orders = [CancelOrderBatchItem(txid=f"ORDER-{i}") for i in range(30)]
+        cl_ord_ids = [f"client-{i}" for i in range(21)]
+
+        with pytest.raises(ValidationError, match="at most 50 total items"):
+            CancelOrderBatchRequest(orders=orders, cl_ord_ids=cl_ord_ids)
+
+
+class TestCancelOrderBatchResponse:
+    """Tests for CancelOrderBatch response schemas"""
+
+    def test_success_response(self):
+        """Test parsing successful response"""
+        kraken_response = {"error": [], "result": {"count": 5}}
+
+        response = CancelOrderBatchResponse.from_response(kraken_response)
+
+        assert response.is_success is True
+        assert response.success.count == 5
+
+    def test_error_response_parsing(self):
+        """Test parsing error response"""
+        kraken_response = {"error": ["EOrder:Unknown order"]}
+
+        response = CancelOrderBatchResponse.from_response(kraken_response)
+
+        assert response.is_success is False
+        assert "EOrder:Unknown order" in response.error.error
+
+    def test_from_json_string(self):
+        """Test parsing from JSON string"""
+        json_response = json.dumps({"error": [], "result": {"count": 10}})
+
+        response = CancelOrderBatchResponse.from_response(json_response)
+
+        assert response.is_success is True
+        assert response.success.count == 10
+
+    def test_invalid_response_format(self):
+        """Test that invalid response format raises error"""
+        invalid_response = {"error": []}
+
+        with pytest.raises(ValueError, match="missing 'result'"):
+            CancelOrderBatchResponse.from_response(invalid_response)
+
+    def test_zero_count(self):
+        """Test response with zero count"""
+        kraken_response = {"error": [], "result": {"count": 0}}
+
+        response = CancelOrderBatchResponse.from_response(kraken_response)
+
+        assert response.is_success is True
+        assert response.success.count == 0
+
+    def test_large_count(self):
+        """Test response with maximum count"""
+        kraken_response = {"error": [], "result": {"count": 50}}
+
+        response = CancelOrderBatchResponse.from_response(kraken_response)
+
+        assert response.is_success is True
+        assert response.success.count == 50
+
+    def test_direct_instantiation(self):
+        """Test creating models directly"""
+        success = CancelOrderBatchSuccess(count=25)
+        response = CancelOrderBatchResponse(success=success)
+
+        assert response.is_success is True
+        assert response.success.count == 25
+
+
+class TestConcurrentCancelOrderBatchScenarios:
+    """Tests for concurrent CancelOrderBatch usage scenarios"""
+
+    def test_multiple_cancel_batches(self):
+        """Test creating multiple cancel batches simultaneously"""
+        batches = []
+        for i in range(10):
+            batch = CancelOrderBatchRequest(
+                orders=[
+                    CancelOrderBatchItem(txid=f"ORDER-{i}-1"),
+                    CancelOrderBatchItem(txid=f"ORDER-{i}-2"),
+                ]
+            )
+            batches.append(batch)
+
+        assert len(batches) == 10
+
+    def test_concurrent_serialization(self):
+        """Test concurrent serialization of cancel batches"""
+        import concurrent.futures
+
+        def create_and_serialize(i):
+            batch = CancelOrderBatchRequest(
+                orders=[
+                    CancelOrderBatchItem(txid=f"ORDER-{i}"),
+                ]
+            )
+            return batch.to_api_dict()
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+            dicts = list(executor.map(create_and_serialize, range(50)))
+
+        assert len(dicts) == 50
+
+    def test_rapid_batch_creation(self):
+        """Test rapid creation of cancel batches"""
+        batches = []
+        for i in range(100):
+            batch = CancelOrderBatchRequest(cl_ord_ids=[f"order-{i}"])
+            batches.append(batch)
+
+        assert len(batches) == 100
+
+    def test_maximum_size_batches(self):
+        """Test batches with 50 items each"""
+        batch1 = CancelOrderBatchRequest(
+            orders=[CancelOrderBatchItem(txid=f"ORDER-{i}") for i in range(50)]
+        )
+        batch2 = CancelOrderBatchRequest(cl_ord_ids=[f"client-{i}" for i in range(50)])
+
+        assert len(batch1.orders) == 50
+        assert len(batch2.cl_ord_ids) == 50

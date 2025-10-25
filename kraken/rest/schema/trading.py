@@ -274,44 +274,27 @@ class AddOrderRequest(BaseSchema):
     @model_validator(mode="after")
     def validate_field_dependencies(self) -> "AddOrderRequest":
         """Validate field dependencies for different order types."""
-        # Iceberg orders require price
-        if self.ordertype == "iceberg" and self.price is None:
-            raise ValueError("Iceberg orders require 'price' field")
-
-        # Limit orders require price
-        if self.ordertype == "limit" and self.price is None:
-            raise ValueError("Limit orders require 'price' field")
-
-        # Stop-loss and take-profit orders require price
-        if self.ordertype in ["stop-loss", "take-profit", "trailing-stop"] and self.price is None:
+        if (
+            self.ordertype in ["iceberg", "limit", "stop-loss", "take-profit", "trailing-stop"]
+            and self.price is None
+        ):
             raise ValueError(f"{self.ordertype} orders require 'price' field")
-
-        # Stop-loss-limit and take-profit-limit require both price and price2
         if self.ordertype in ["stop-loss-limit", "take-profit-limit", "trailing-stop-limit"]:
             if self.price is None or self.price2 is None:
                 raise ValueError(
                     f"{self.ordertype} orders require both 'price' and 'price2' fields"
                 )
-
-        # Conditional close orders require close_price
         if self.close_ordertype is not None and self.close_price is None:
             raise ValueError("Conditional close orders require 'close_price' field")
-
-        # Conditional close limit orders require close_price2
         if self.close_ordertype in ["stop-loss-limit", "take-profit-limit"]:
             if self.close_price2 is None:
                 raise ValueError(
                     f"Conditional close {self.close_ordertype} orders require 'close_price2' field"
                 )
-
-        # GTD orders require expiretm
         if self.timeinforce == "GTD" and (self.expiretm is None or self.expiretm == "0"):
             raise ValueError("GTD (Good-Til-Date) orders require 'expiretm' field")
-
-        # userref and cl_ord_id are mutually exclusive
         if self.userref is not None and self.cl_ord_id is not None:
             raise ValueError("'userref' and 'cl_ord_id' are mutually exclusive")
-
         return self
 
     def to_api_dict(self, **kwargs) -> dict[str, Any]:
@@ -1295,4 +1278,591 @@ class GetWebSocketsTokenResponse(BaseSchema):
             token=result["token"],
             expires=result["expires"],
         )
+        return cls(success=success_data)
+
+
+class BatchOrderItem(BaseSchema):
+    """Schema for individual order within an AddOrderBatch request.
+
+    This schema represents a single order in a batch submission. It contains
+    the same fields as AddOrderRequest except for pair, asset_class, deadline,
+    and only_validate which are specified at the batch level.
+
+    Important Notes:
+        - All orders in a batch must be for the same trading pair
+        - Same validation rules as AddOrderRequest apply to each order
+        - Batch-level validation occurs before submission to matching engine
+        - Individual order failures during engine processing don't reject entire batch
+
+    Usage Example:
+        >>> order_item = BatchOrderItem(
+        ...     ordertype="limit",
+        ...     type="buy",
+        ...     volume=1.5,
+        ...     price="50000"
+        ... )
+    """
+
+    userref: int | None = Field(
+        default=None,
+        description="User reference id. Mutually exclusive with cl_ord_id parameter.",
+    )
+    cl_ord_id: str | None = Field(
+        default=None,
+        description="Alphanumeric client order identifier. Mutually exclusive with userref parameter.",
+    )
+    ordertype: ORDER_TYPE = Field(..., description="The execution model of the order.")
+    type: ORDER_DIRECTION = Field(..., description="Order direction (buy/sell).")
+    volume: str | float | int = Field(
+        ...,
+        description="Order quantity in terms of the base asset.",
+    )
+    displayvol: str | float | int | None = Field(
+        default=None,
+        description="For iceberg orders only, visible quantity in the book.",
+    )
+    price: str | None = Field(
+        default=None,
+        description="Limit price for limit/iceberg orders; trigger price for stop-loss/take-profit orders.",
+    )
+    price2: str | None = Field(
+        default=None,
+        description="Limit price for stop-loss-limit and take-profit-limit orders.",
+    )
+    trigger: TRIGGER_TYPE | None = Field(
+        default=None,
+        description="Price signal used to trigger stop-loss and take-profit orders.",
+    )
+    leverage: str | int | None = Field(None, description="Amount of desired leverage.")
+    reduce_only: bool = Field(
+        default=False,
+        description="If True, order will only reduce a currently open position.",
+    )
+    stptype: STP_TYPE | None = Field(
+        default=None,
+        description="Self Trade Prevention (STP) behavior.",
+    )
+    oflags: str | list[str] | set[str] | None = Field(
+        default=None,
+        description="Comma delimited list of order flags: 'post', 'fcib', 'fciq', 'viqc'.",
+    )
+    timeinforce: TIME_IN_FORCE | None = Field(
+        default="GTC",
+        description="Time-in-force of the order.",
+    )
+    starttm: str | None = Field(
+        default="0",
+        description="Scheduled start time.",
+    )
+    expiretm: str | None = Field(
+        default="0",
+        description="Expiry time on GTD orders.",
+    )
+
+    @field_validator("ordertype", mode="before")
+    @classmethod
+    def lowercase_order(cls, value: str) -> str:
+        return value.lower().strip()
+
+    @field_validator("volume", mode="before")
+    @classmethod
+    def string_volume(cls, value: str | float | int) -> str:
+        return str(value)
+
+    @field_validator("displayvol", mode="before")
+    @classmethod
+    def floor_display_volume(cls, value: str | float | int | None, info) -> str | None:
+        if value is None:
+            return None
+        order_volume = float(info.data.get("volume"))
+        floor_volume = order_volume / 15.0
+        if float(value) > order_volume:
+            return str(order_volume)
+        elif float(value) < floor_volume:
+            return str(floor_volume)
+        else:
+            return str(value)
+
+    @field_validator("leverage", mode="before")
+    @classmethod
+    def string_leverage(cls, value: str | float | None) -> str | None:
+        if value is None:
+            return None
+        return str(value)
+
+    @field_validator("oflags", mode="before")
+    @classmethod
+    def concat_order_flags(cls, value: str | list[str] | set[str] | None) -> str | None:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            splits = value.split(",")
+            if len(splits) > 1:
+                value = set(splits)
+            else:
+                value = {value}
+        elif isinstance(value, list):
+            value = set(value)
+        value = ORDER_FLAG_SET.intersection(value)
+        return ",".join(value) if len(value) > 0 else None
+
+    @field_validator("timeinforce", mode="before")
+    @classmethod
+    def capitalize_time_in_force(cls, value: str) -> str:
+        return value.upper().strip()
+
+    @model_validator(mode="after")
+    def validate_field_dependencies(self) -> "BatchOrderItem":
+        """Validate field dependencies for different order types."""
+        if (
+            self.ordertype in ["iceberg", "limit", "stop-loss", "take-profit", "trailing-stop"]
+            and self.price is None
+        ):
+            raise ValueError(f"{self.ordertype} orders require 'price' field")
+        if self.ordertype in ["stop-loss-limit", "take-profit-limit", "trailing-stop-limit"]:
+            if self.price is None or self.price2 is None:
+                raise ValueError(
+                    f"{self.ordertype} orders require both 'price' and 'price2' fields"
+                )
+        if self.timeinforce == "GTD" and (self.expiretm is None or self.expiretm == "0"):
+            raise ValueError("GTD (Good-Til-Date) orders require 'expiretm' field")
+        if self.userref is not None and self.cl_ord_id is not None:
+            raise ValueError("'userref' and 'cl_ord_id' are mutually exclusive")
+        return self
+
+
+class AddOrderBatchRequest(BaseSchema):
+    """Schema for Kraken AddOrderBatch API request.
+
+    This schema validates and prepares batch order data for submission to Kraken's
+    AddOrderBatch API endpoint. Batch orders allow submitting 2-15 orders in a
+    single request for the same trading pair.
+
+    Important Notes:
+        - Minimum 2 orders, maximum 15 orders per batch
+        - All orders must be for the same trading pair
+        - Validation is performed on the whole batch prior to submission
+        - If an order fails validation, the whole batch will be rejected
+        - On submission to engine, individual order failures don't reject entire batch
+        - The 'nonce' parameter is automatically generated by the REST client
+        - The 'deadline' parameter is NOT auto-generated during instantiation
+        - Use to_api_dict() to serialize for API submission
+
+    Thread Safety:
+        This schema is thread-safe for instantiation and validation.
+        Time-sensitive fields (nonce, deadline) are handled by the REST client
+        at the last possible moment before request signing.
+
+    Usage Examples:
+        Batch of limit orders:
+        >>> batch = AddOrderBatchRequest(
+        ...     orders=[
+        ...         BatchOrderItem(ordertype="limit", type="buy", volume=1.0, price="50000"),
+        ...         BatchOrderItem(ordertype="limit", type="buy", volume=0.5, price="49000"),
+        ...     ],
+        ...     pair="XBTUSD"
+        ... )
+        >>> data = batch.to_api_dict()
+        >>> response = client.request("AddOrderBatch", data=data)
+
+        Mixed order types:
+        >>> batch = AddOrderBatchRequest(
+        ...     orders=[
+        ...         BatchOrderItem(ordertype="market", type="buy", volume=1.0),
+        ...         BatchOrderItem(ordertype="limit", type="sell", volume=1.0, price="55000"),
+        ...         BatchOrderItem(ordertype="stop-loss", type="sell", volume=1.0, price="45000"),
+        ...     ],
+        ...     pair="XBTUSD"
+        ... )
+
+        Validation only:
+        >>> batch = AddOrderBatchRequest(
+        ...     orders=[...],
+        ...     pair="XBTUSD",
+        ...     validate=True
+        ... )
+    """
+
+    orders: list[BatchOrderItem] = Field(
+        ...,
+        description="Array of orders (minimum 2, maximum 15).",
+    )
+    pair: str = Field(
+        ..., description="Asset pair id or altname (all orders must be for this pair)."
+    )
+    asset_class: str | None = Field(
+        None, description="Required to be set as 'tokenized_asset' for non-crypto pairs (xstocks)."
+    )
+    deadline: str | None = Field(
+        default=None,
+        description="RFC3339 timestamp after which the matching engine should reject the batch request.",
+    )
+    validate: bool = Field(
+        default=False,
+        description="If True, validates batch inputs without placing orders.",
+    )
+
+    @field_validator("orders", mode="after")
+    @classmethod
+    def validate_batch_size(cls, value: list[BatchOrderItem]) -> list[BatchOrderItem]:
+        """Validate batch contains 2-15 orders."""
+        if len(value) < 2:
+            raise ValueError(f"Batch must contain at least 2 orders, got {len(value)}")
+        if len(value) > 15:
+            raise ValueError(f"Batch must contain at most 15 orders, got {len(value)}")
+        return value
+
+    @field_validator("deadline", mode="after")
+    @classmethod
+    def validate_deadline(cls, value: str | None) -> str | None:
+        """Validate deadline format and timezone information."""
+        if value is None:
+            return None
+
+        deadline = datetime.fromisoformat(value)
+        if deadline.tzinfo is None:
+            raise ValueError(
+                "Deadline must include timezone information (RFC3339 format). "
+                "Example: '2025-01-15T12:00:00+00:00' or use 'Z' for UTC."
+            )
+
+        # Validate deadline is bounded between 2-60 seconds from now
+        now = utc_now()
+        min_t, max_t = now + timedelta(seconds=2), now + timedelta(seconds=60)
+        deadline_utc = deadline.astimezone(now.tzinfo)
+
+        if deadline_utc < min_t:
+            deadline_utc = min_t
+        elif deadline_utc > max_t:
+            deadline_utc = max_t
+
+        return deadline_utc.isoformat()
+
+    def to_api_dict(self, **kwargs) -> dict[str, Any]:
+        """Serialize batch request to dict for Kraken API submission.
+
+        This method handles proper field aliasing and exclusion of None values
+        for API compatibility. Use this method when passing batch requests to
+        the REST client.
+
+        Args:
+            exclude_none: If True, removes fields with None values from output.
+                         Default is True for Kraken API compatibility.
+
+        Returns:
+            Dictionary suitable for Kraken API AddOrderBatch endpoint
+
+        Example:
+            >>> batch = AddOrderBatchRequest(orders=[...], pair="XBTUSD")
+            >>> data = batch.to_api_dict()
+            >>> response = client.request("AddOrderBatch", data=data)
+        """
+        return self.model_dump(
+            by_alias=kwargs.pop("by_alias", True),
+            exclude_none=kwargs.pop("exclude_none", True),
+            **kwargs,
+        )
+
+
+class BatchOrderResult(BaseSchema):
+    """Result for an individual order within an AddOrderBatch response.
+
+    Represents the outcome of a single order in a batch submission.
+    """
+
+    txid: str | None = Field(
+        default=None,
+        description="Transaction ID for order (if order was added successfully).",
+    )
+    descr: dict | None = Field(
+        default=None,
+        description="Order description info (if order was added successfully).",
+    )
+    error: str | None = Field(
+        default=None,
+        description="Error description from individual order processing (if order failed).",
+    )
+
+    @property
+    def is_success(self) -> bool:
+        """Check if the individual order was successful."""
+        return self.txid is not None and self.error is None
+
+
+class AddOrderBatchSuccess(BaseSchema):
+    """Successful AddOrderBatch response from Kraken API.
+
+    Contains results for each order in the batch. The order of results matches
+    the order of the request.
+    """
+
+    orders: list[BatchOrderResult] = Field(
+        ...,
+        description="Results for each order in the batch (order matches request order).",
+    )
+
+
+class AddOrderBatchResponse(BaseSchema):
+    """Combined response wrapper for AddOrderBatch API calls.
+
+    This wrapper handles both success and error cases from the Kraken API.
+    Use the `is_success` property to determine the outcome and access the
+    appropriate `success` or `error` attribute.
+
+    Note: Even in success cases, individual orders may have errors. Check
+    each BatchOrderResult for individual order outcomes.
+    """
+
+    success: AddOrderBatchSuccess | None = Field(
+        default=None,
+        description="Success response data, present when batch submission succeeds.",
+    )
+    error: ResponseErrorSchema | None = Field(
+        default=None,
+        description="Error response data, present when batch validation fails.",
+    )
+
+    @property
+    def is_success(self) -> bool:
+        """Check if the batch response indicates success."""
+        return self.success is not None
+
+    @classmethod
+    def from_response(cls, response: dict | str) -> "AddOrderBatchResponse":
+        """Parse a Kraken API response into the appropriate response model.
+
+        Args:
+            response: Either a JSON string or dict containing the API response
+
+        Returns:
+            AddOrderBatchResponse with either success or error data populated
+
+        Raises:
+            ValueError: If the response format is invalid
+        """
+        if isinstance(response, str):
+            response = json.loads(response)
+        errors = response.get("error", [])
+        if errors:
+            error_data = ResponseErrorSchema(error=errors)
+            return cls(error=error_data)
+
+        result = response.get("result")
+        if not result:
+            raise ValueError("Response missing 'result' field")
+
+        orders_data = result.get("orders", [])
+        batch_results = []
+        for order_data in orders_data:
+            batch_result = BatchOrderResult(
+                txid=order_data.get("txid"),
+                descr=order_data.get("descr"),
+                error=order_data.get("error"),
+            )
+            batch_results.append(batch_result)
+
+        success_data = AddOrderBatchSuccess(orders=batch_results)
+        return cls(success=success_data)
+
+
+class CancelOrderBatchItem(BaseSchema):
+    """Schema for individual order identifier in a CancelOrderBatch request.
+
+    Represents a single order to cancel by either transaction ID (txid),
+    user reference (userref), or client order ID (cl_ord_id).
+    """
+
+    txid: str | int | None = Field(
+        default=None,
+        description="Transaction ID (txid) or user reference (userref).",
+    )
+    cl_ord_id: str | None = Field(
+        default=None,
+        description="Client order identifier.",
+    )
+
+    @field_validator("txid", mode="before")
+    @classmethod
+    def normalize_txid(cls, value: str | int | None) -> str | int | None:
+        """Normalize txid - convert string integers to int, keep string txids as strings."""
+        if value is None:
+            return None
+        if isinstance(value, int):
+            return value
+        if isinstance(value, str):
+            try:
+                return int(value)
+            except ValueError:
+                return value.strip()
+        return value
+
+    @model_validator(mode="after")
+    def validate_field_dependencies(self) -> "CancelOrderBatchItem":
+        """Validate that at least one identifier is provided."""
+        if self.txid is None and self.cl_ord_id is None:
+            raise ValueError("Either 'txid' or 'cl_ord_id' must be provided")
+        if self.txid is not None and self.cl_ord_id is not None:
+            raise ValueError("'txid' and 'cl_ord_id' are mutually exclusive")
+        return self
+
+
+class CancelOrderBatchRequest(BaseSchema):
+    """Schema for Kraken CancelOrderBatch API request.
+
+    This schema validates and prepares batch cancellation data for submission to
+    Kraken's CancelOrderBatch API endpoint. Allows cancelling up to 50 orders in
+    a single request.
+
+    Important Notes:
+        - Maximum 50 unique IDs/references per batch
+        - Must provide either 'orders' or 'cl_ord_ids' (or both)
+        - The 'nonce' parameter is automatically generated by the REST client
+        - Use to_api_dict() to serialize for API submission
+
+    Thread Safety:
+        This schema is thread-safe for instantiation and validation.
+        The nonce field is handled by the REST client at the last possible
+        moment before request signing.
+
+    Usage Examples:
+        Cancel by transaction IDs:
+        >>> batch = CancelOrderBatchRequest(
+        ...     orders=[
+        ...         CancelOrderBatchItem(txid="OUF4EM-FRGI2-MQMWZD"),
+        ...         CancelOrderBatchItem(txid="ABC123-DEF456-GHI789"),
+        ...     ]
+        ... )
+        >>> response = client.request("CancelOrderBatch", data=batch.to_api_dict())
+
+        Cancel by user references:
+        >>> batch = CancelOrderBatchRequest(
+        ...     orders=[
+        ...         CancelOrderBatchItem(txid=12345),
+        ...         CancelOrderBatchItem(txid=67890),
+        ...     ]
+        ... )
+
+        Cancel by client order IDs:
+        >>> batch = CancelOrderBatchRequest(
+        ...     cl_ord_ids=["my-order-1", "my-order-2", "my-order-3"]
+        ... )
+
+        Mixed cancellation:
+        >>> batch = CancelOrderBatchRequest(
+        ...     orders=[CancelOrderBatchItem(txid="ABC-123")],
+        ...     cl_ord_ids=["client-order-1"]
+        ... )
+    """
+
+    orders: list[CancelOrderBatchItem] | None = Field(
+        default=None,
+        description="Array of order identifiers to cancel (up to 50 total).",
+    )
+    cl_ord_ids: list[str] | None = Field(
+        default=None,
+        description="Array of client order IDs to cancel (up to 50 total).",
+    )
+
+    @model_validator(mode="after")
+    def validate_batch_constraints(self) -> "CancelOrderBatchRequest":
+        """Validate batch size and that at least one identifier type is provided."""
+        if self.orders is None and self.cl_ord_ids is None:
+            raise ValueError("Either 'orders' or 'cl_ord_ids' must be provided")
+
+        # Count total items
+        total_items = 0
+        if self.orders is not None:
+            total_items += len(self.orders)
+        if self.cl_ord_ids is not None:
+            total_items += len(self.cl_ord_ids)
+
+        if total_items > 50:
+            raise ValueError(f"Batch must contain at most 50 total items, got {total_items}")
+
+        return self
+
+    def to_api_dict(self, **kwargs) -> dict[str, Any]:
+        """Serialize cancel batch request to dict for Kraken API submission.
+
+        This method handles proper field aliasing and exclusion of None values
+        for API compatibility. Use this method when passing batch requests to
+        the REST client.
+
+        Args:
+            exclude_none: If True, removes fields with None values from output.
+                         Default is True for Kraken API compatibility.
+
+        Returns:
+            Dictionary suitable for Kraken API CancelOrderBatch endpoint
+
+        Example:
+            >>> batch = CancelOrderBatchRequest(orders=[...])
+            >>> data = batch.to_api_dict()
+            >>> response = client.request("CancelOrderBatch", data=data)
+        """
+        return self.model_dump(
+            by_alias=kwargs.pop("by_alias", True),
+            exclude_none=kwargs.pop("exclude_none", True),
+            **kwargs,
+        )
+
+
+class CancelOrderBatchSuccess(BaseSchema):
+    """Successful CancelOrderBatch response from Kraken API.
+
+    Contains the number of orders cancelled.
+    """
+
+    count: int = Field(
+        ...,
+        description="Number of orders cancelled.",
+    )
+
+
+class CancelOrderBatchResponse(BaseSchema):
+    """Combined response wrapper for CancelOrderBatch API calls.
+
+    This wrapper handles both success and error cases from the Kraken API.
+    Use the `is_success` property to determine the outcome and access the
+    appropriate `success` or `error` attribute.
+    """
+
+    success: CancelOrderBatchSuccess | None = Field(
+        default=None,
+        description="Success response data, present when batch cancellation succeeds.",
+    )
+    error: ResponseErrorSchema | None = Field(
+        default=None,
+        description="Error response data, present when batch cancellation fails.",
+    )
+
+    @property
+    def is_success(self) -> bool:
+        """Check if the response indicates success."""
+        return self.success is not None
+
+    @classmethod
+    def from_response(cls, response: dict | str) -> "CancelOrderBatchResponse":
+        """Parse a Kraken API response into the appropriate response model.
+
+        Args:
+            response: Either a JSON string or dict containing the API response
+
+        Returns:
+            CancelOrderBatchResponse with either success or error data populated
+
+        Raises:
+            ValueError: If the response format is invalid
+        """
+        if isinstance(response, str):
+            response = json.loads(response)
+        errors = response.get("error", [])
+        if errors:
+            error_data = ResponseErrorSchema(error=errors)
+            return cls(error=error_data)
+
+        result = response.get("result")
+        if not result:
+            raise ValueError("Response missing 'result' field")
+        success_data = CancelOrderBatchSuccess(count=result["count"])
         return cls(success=success_data)
