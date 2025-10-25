@@ -208,5 +208,7 @@ __marimo__/
 
 # Claude
 .claude
+.mcp.json
 
+# Project
 examples/
