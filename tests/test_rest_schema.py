@@ -13,6 +13,12 @@ from kraken.rest.schema.trading import (
     AmendOrderRequest,
     AmendOrderResponse,
     AmendOrderSuccess,
+    CancelAllOrdersAfterRequest,
+    CancelAllOrdersAfterResponse,
+    CancelAllOrdersAfterSuccess,
+    CancelAllRequest,
+    CancelAllResponse,
+    CancelAllSuccess,
     CancelOrderRequest,
     CancelOrderResponse,
     CancelOrderSuccess,
@@ -1595,3 +1601,562 @@ class TestConcurrentCancelScenarios:
         for d in dicts:
             assert "txid" in d
             assert d["txid"].startswith("SERIAL-")
+
+
+class TestCancelAllRequest:
+    """Tests for CancelAllRequest schema"""
+
+    def test_minimal_valid_cancel_all(self):
+        """Test creating a minimal valid cancel all request"""
+        cancel_all = CancelAllRequest()
+
+        # Should be valid with no required fields
+        assert cancel_all is not None
+
+    def test_no_nonce_field(self):
+        """Test that nonce is not present in schema (handled by REST client)"""
+        cancel_all = CancelAllRequest()
+
+        # Should not have a nonce attribute
+        assert not hasattr(cancel_all, "nonce")
+
+    def test_to_api_dict_method(self):
+        """Test to_api_dict() serialization helper method"""
+        cancel_all = CancelAllRequest()
+
+        # to_api_dict() should use by_alias=True and exclude_none=True
+        data = cancel_all.to_api_dict()
+
+        # Should return an empty dict (no fields except nonce which is added by client)
+        assert data == {}
+
+        # Test exclude_none=False
+        data_with_none = cancel_all.to_api_dict(exclude_none=False)
+        assert data_with_none == {}
+
+    def test_multiple_instances(self):
+        """Test creating multiple CancelAllRequest instances"""
+        requests = [CancelAllRequest() for _ in range(10)]
+
+        # All should be valid
+        assert len(requests) == 10
+        for req in requests:
+            assert req is not None
+
+
+class TestCancelAllResponse:
+    """Tests for CancelAll response schemas"""
+
+    def test_success_response_parsing_single_order(self):
+        """Test parsing a successful single order cancellation response"""
+        kraken_response = {
+            "error": [],
+            "result": {
+                "count": 1,
+            },
+        }
+
+        response = CancelAllResponse.from_response(kraken_response)
+
+        assert response.is_success is True
+        assert response.success is not None
+        assert response.error is None
+        assert response.success.count == 1
+        assert response.success.pending is None
+
+    def test_success_response_parsing_multiple_orders(self):
+        """Test parsing a successful multiple order cancellation response"""
+        kraken_response = {
+            "error": [],
+            "result": {
+                "count": 15,
+            },
+        }
+
+        response = CancelAllResponse.from_response(kraken_response)
+
+        assert response.is_success is True
+        assert response.success.count == 15
+
+    def test_success_response_with_pending_true(self):
+        """Test parsing a success response with pending cancellation"""
+        kraken_response = {
+            "error": [],
+            "result": {
+                "count": 8,
+                "pending": True,
+            },
+        }
+
+        response = CancelAllResponse.from_response(kraken_response)
+
+        assert response.is_success is True
+        assert response.success.count == 8
+        assert response.success.pending is True
+
+    def test_success_response_with_pending_false(self):
+        """Test parsing a success response with pending = false"""
+        kraken_response = {
+            "error": [],
+            "result": {
+                "count": 3,
+                "pending": False,
+            },
+        }
+
+        response = CancelAllResponse.from_response(kraken_response)
+
+        assert response.is_success is True
+        assert response.success.count == 3
+        assert response.success.pending is False
+
+    def test_error_response_parsing(self):
+        """Test parsing an error response"""
+        kraken_response = {
+            "error": ["EGeneral:Permission denied"],
+        }
+
+        response = CancelAllResponse.from_response(kraken_response)
+
+        assert response.is_success is False
+        assert response.success is None
+        assert response.error is not None
+        assert "EGeneral:Permission denied" in response.error.error
+
+    def test_multiple_errors(self):
+        """Test parsing response with multiple errors"""
+        kraken_response = {
+            "error": [
+                "EGeneral:Invalid arguments",
+                "EGeneral:Permission denied",
+            ],
+        }
+
+        response = CancelAllResponse.from_response(kraken_response)
+
+        assert response.is_success is False
+        assert len(response.error.error) == 2
+        assert "EGeneral:Invalid arguments" in response.error.error
+        assert "EGeneral:Permission denied" in response.error.error
+
+    def test_from_json_string(self):
+        """Test parsing from JSON string"""
+        json_response = json.dumps(
+            {
+                "error": [],
+                "result": {
+                    "count": 7,
+                    "pending": False,
+                },
+            }
+        )
+
+        response = CancelAllResponse.from_response(json_response)
+
+        assert response.is_success is True
+        assert response.success.count == 7
+        assert response.success.pending is False
+
+    def test_invalid_response_format(self):
+        """Test that invalid response format raises appropriate error"""
+        invalid_response = {"error": []}  # Missing 'result'
+
+        with pytest.raises(ValueError, match="missing 'result'"):
+            CancelAllResponse.from_response(invalid_response)
+
+    def test_success_model_direct_instantiation(self):
+        """Test creating CancelAllSuccess directly"""
+        success = CancelAllSuccess(count=20)
+
+        assert success.count == 20
+        assert success.pending is None
+
+        success2 = CancelAllSuccess(count=10, pending=True)
+
+        assert success2.count == 10
+        assert success2.pending is True
+
+    def test_error_model_direct_instantiation(self):
+        """Test creating error response directly"""
+        error = ResponseErrorSchema(error=["EGeneral:Permission denied"])
+
+        assert len(error.error) == 1
+        assert error.error[0] == "EGeneral:Permission denied"
+
+    def test_response_wrapper_direct_instantiation(self):
+        """Test creating CancelAllResponse wrapper directly"""
+        success = CancelAllSuccess(count=5, pending=False)
+        response = CancelAllResponse(success=success)
+
+        assert response.is_success is True
+        assert response.success.count == 5
+
+        error = ResponseErrorSchema(error=["Test error"])
+        response2 = CancelAllResponse(error=error)
+
+        assert response2.is_success is False
+        assert response2.error.error[0] == "Test error"
+
+    def test_zero_count_response(self):
+        """Test handling response with zero count (edge case - no open orders)"""
+        kraken_response = {
+            "error": [],
+            "result": {
+                "count": 0,
+            },
+        }
+
+        response = CancelAllResponse.from_response(kraken_response)
+
+        # Even with zero count, it's still a successful response
+        assert response.is_success is True
+        assert response.success.count == 0
+
+
+class TestConcurrentCancelAllScenarios:
+    """Tests for concurrent and async cancel all usage scenarios"""
+
+    def test_multiple_cancel_all_no_collision(self):
+        """Test that creating multiple cancel all requests simultaneously doesn't cause issues"""
+        # Create multiple cancel all requests in rapid succession
+        cancels = []
+        for i in range(10):
+            cancel = CancelAllRequest()
+            cancels.append(cancel)
+
+        # All cancels should be valid
+        assert len(cancels) == 10
+
+        # No nonce field should exist (nonce handled by REST client)
+        for cancel in cancels:
+            assert not hasattr(cancel, "nonce")
+
+    def test_concurrent_serialization(self):
+        """Test concurrent serialization of cancel all requests"""
+        import concurrent.futures
+
+        def create_and_serialize(i):
+            cancel = CancelAllRequest()
+            return cancel.to_api_dict()
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+            dicts = list(executor.map(create_and_serialize, range(50)))
+
+        assert len(dicts) == 50
+
+        # All should have valid structure (empty dict)
+        for d in dicts:
+            assert d == {}
+
+
+class TestCancelAllOrdersAfterRequest:
+    """Tests for CancelAllOrdersAfterRequest schema"""
+
+    def test_minimal_valid_request_with_timeout(self):
+        """Test creating a minimal valid request with timeout"""
+        cancel_after = CancelAllOrdersAfterRequest(timeout=60)
+
+        assert cancel_after.timeout == 60
+
+    def test_timeout_zero_to_disable(self):
+        """Test setting timeout to zero to disable the timer"""
+        cancel_after = CancelAllOrdersAfterRequest(timeout=0)
+
+        assert cancel_after.timeout == 0
+
+    def test_timeout_max_value(self):
+        """Test setting timeout to maximum allowed value (24 hours)"""
+        cancel_after = CancelAllOrdersAfterRequest(timeout=86400)
+
+        assert cancel_after.timeout == 86400
+
+    def test_timeout_string_conversion(self):
+        """Test that timeout string is converted to integer"""
+        cancel_after = CancelAllOrdersAfterRequest(timeout="120")
+
+        assert cancel_after.timeout == 120
+        assert isinstance(cancel_after.timeout, int)
+
+    def test_timeout_negative_validation(self):
+        """Test that negative timeout raises validation error"""
+        with pytest.raises(ValidationError, match="between 0 and 86400"):
+            CancelAllOrdersAfterRequest(timeout=-1)
+
+    def test_timeout_too_large_validation(self):
+        """Test that timeout exceeding maximum raises validation error"""
+        with pytest.raises(ValidationError, match="between 0 and 86400"):
+            CancelAllOrdersAfterRequest(timeout=86401)
+
+    def test_timeout_way_too_large_validation(self):
+        """Test that extremely large timeout raises validation error"""
+        with pytest.raises(ValidationError, match="between 0 and 86400"):
+            CancelAllOrdersAfterRequest(timeout=100000)
+
+    def test_timeout_required(self):
+        """Test that timeout field is required"""
+        with pytest.raises(ValidationError):
+            CancelAllOrdersAfterRequest()
+
+    def test_no_nonce_field(self):
+        """Test that nonce is not present in schema (handled by REST client)"""
+        cancel_after = CancelAllOrdersAfterRequest(timeout=60)
+
+        # Should not have a nonce attribute
+        assert not hasattr(cancel_after, "nonce")
+
+    def test_to_api_dict_method(self):
+        """Test to_api_dict() serialization helper method"""
+        cancel_after = CancelAllOrdersAfterRequest(timeout=120)
+
+        # to_api_dict() should use by_alias=True and exclude_none=True
+        data = cancel_after.to_api_dict()
+
+        # Should contain timeout field
+        assert "timeout" in data
+        assert data["timeout"] == 120
+
+    def test_to_api_dict_with_zero_timeout(self):
+        """Test to_api_dict() with timeout=0 to disable"""
+        cancel_after = CancelAllOrdersAfterRequest(timeout=0)
+
+        data = cancel_after.to_api_dict()
+
+        # Zero should be included (not excluded as None)
+        assert "timeout" in data
+        assert data["timeout"] == 0
+
+    def test_various_timeout_values(self):
+        """Test various valid timeout values"""
+        timeouts = [0, 15, 30, 60, 300, 600, 3600, 43200, 86400]
+
+        for timeout_val in timeouts:
+            cancel_after = CancelAllOrdersAfterRequest(timeout=timeout_val)
+            assert cancel_after.timeout == timeout_val
+
+
+class TestCancelAllOrdersAfterResponse:
+    """Tests for CancelAllOrdersAfter response schemas"""
+
+    def test_success_response_parsing(self):
+        """Test parsing a successful response"""
+        kraken_response = {
+            "error": [],
+            "result": {
+                "currentTime": "2025-01-15T12:00:00Z",
+                "triggerTime": "2025-01-15T12:01:00Z",
+            },
+        }
+
+        response = CancelAllOrdersAfterResponse.from_response(kraken_response)
+
+        assert response.is_success is True
+        assert response.success is not None
+        assert response.error is None
+        assert response.success.currentTime == "2025-01-15T12:00:00Z"
+        assert response.success.triggerTime == "2025-01-15T12:01:00Z"
+
+    def test_success_response_with_zero_timeout(self):
+        """Test parsing response when timer is disabled (timeout=0)"""
+        kraken_response = {
+            "error": [],
+            "result": {
+                "currentTime": "2025-01-15T12:00:00Z",
+                "triggerTime": "0",
+            },
+        }
+
+        response = CancelAllOrdersAfterResponse.from_response(kraken_response)
+
+        assert response.is_success is True
+        assert response.success.currentTime == "2025-01-15T12:00:00Z"
+        assert response.success.triggerTime == "0"
+
+    def test_error_response_parsing(self):
+        """Test parsing an error response"""
+        kraken_response = {
+            "error": ["EGeneral:Invalid arguments"],
+        }
+
+        response = CancelAllOrdersAfterResponse.from_response(kraken_response)
+
+        assert response.is_success is False
+        assert response.success is None
+        assert response.error is not None
+        assert "EGeneral:Invalid arguments" in response.error.error
+
+    def test_multiple_errors(self):
+        """Test parsing response with multiple errors"""
+        kraken_response = {
+            "error": [
+                "EGeneral:Invalid arguments",
+                "EGeneral:Permission denied",
+            ],
+        }
+
+        response = CancelAllOrdersAfterResponse.from_response(kraken_response)
+
+        assert response.is_success is False
+        assert len(response.error.error) == 2
+        assert "EGeneral:Invalid arguments" in response.error.error
+        assert "EGeneral:Permission denied" in response.error.error
+
+    def test_from_json_string(self):
+        """Test parsing from JSON string"""
+        json_response = json.dumps(
+            {
+                "error": [],
+                "result": {
+                    "currentTime": "2025-01-15T14:30:00Z",
+                    "triggerTime": "2025-01-15T14:31:00Z",
+                },
+            }
+        )
+
+        response = CancelAllOrdersAfterResponse.from_response(json_response)
+
+        assert response.is_success is True
+        assert response.success.currentTime == "2025-01-15T14:30:00Z"
+        assert response.success.triggerTime == "2025-01-15T14:31:00Z"
+
+    def test_invalid_response_format(self):
+        """Test that invalid response format raises appropriate error"""
+        invalid_response = {"error": []}  # Missing 'result'
+
+        with pytest.raises(ValueError, match="missing 'result'"):
+            CancelAllOrdersAfterResponse.from_response(invalid_response)
+
+    def test_success_model_direct_instantiation(self):
+        """Test creating CancelAllOrdersAfterSuccess directly"""
+        success = CancelAllOrdersAfterSuccess(
+            currentTime="2025-01-15T10:00:00Z", triggerTime="2025-01-15T10:01:00Z"
+        )
+
+        assert success.currentTime == "2025-01-15T10:00:00Z"
+        assert success.triggerTime == "2025-01-15T10:01:00Z"
+
+    def test_error_model_direct_instantiation(self):
+        """Test creating error response directly"""
+        error = ResponseErrorSchema(error=["EGeneral:Invalid timeout"])
+
+        assert len(error.error) == 1
+        assert error.error[0] == "EGeneral:Invalid timeout"
+
+    def test_response_wrapper_direct_instantiation(self):
+        """Test creating CancelAllOrdersAfterResponse wrapper directly"""
+        success = CancelAllOrdersAfterSuccess(
+            currentTime="2025-01-15T10:00:00Z", triggerTime="2025-01-15T10:01:00Z"
+        )
+        response = CancelAllOrdersAfterResponse(success=success)
+
+        assert response.is_success is True
+        assert response.success.currentTime == "2025-01-15T10:00:00Z"
+
+        error = ResponseErrorSchema(error=["Test error"])
+        response2 = CancelAllOrdersAfterResponse(error=error)
+
+        assert response2.is_success is False
+        assert response2.error.error[0] == "Test error"
+
+    def test_rfc3339_timestamp_format(self):
+        """Test that various RFC3339 timestamp formats are accepted"""
+        # Different RFC3339 formats
+        formats = [
+            ("2025-01-15T12:00:00Z", "2025-01-15T12:01:00Z"),
+            ("2025-01-15T12:00:00+00:00", "2025-01-15T12:01:00+00:00"),
+            ("2025-01-15T12:00:00.123456Z", "2025-01-15T12:01:00.123456Z"),
+            ("2025-01-15T08:00:00-04:00", "2025-01-15T08:01:00-04:00"),
+        ]
+
+        for current, trigger in formats:
+            kraken_response = {
+                "error": [],
+                "result": {
+                    "currentTime": current,
+                    "triggerTime": trigger,
+                },
+            }
+
+            response = CancelAllOrdersAfterResponse.from_response(kraken_response)
+
+            assert response.is_success is True
+            assert response.success.currentTime == current
+            assert response.success.triggerTime == trigger
+
+
+class TestConcurrentCancelAllOrdersAfterScenarios:
+    """Tests for concurrent and async cancel all orders after usage scenarios"""
+
+    def test_multiple_requests_no_collision(self):
+        """Test that creating multiple requests simultaneously doesn't cause issues"""
+        # Create multiple requests in rapid succession
+        requests = []
+        for i in range(10):
+            req = CancelAllOrdersAfterRequest(timeout=60 + i * 10)
+            requests.append(req)
+
+        # All requests should be valid
+        assert len(requests) == 10
+
+        # No nonce field should exist (nonce handled by REST client)
+        for req in requests:
+            assert not hasattr(req, "nonce")
+
+        # Each should have unique timeout
+        timeouts = [r.timeout for r in requests]
+        assert len(set(timeouts)) == 10
+
+    def test_concurrent_creation_with_validation(self):
+        """Test concurrent creation with timeout validation"""
+        import concurrent.futures
+
+        def create_request(i):
+            # Create with different valid timeouts
+            timeout = (i % 10) * 100 + 60
+            return CancelAllOrdersAfterRequest(timeout=timeout)
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            requests = list(executor.map(create_request, range(50)))
+
+        assert len(requests) == 50
+
+        # All should have valid timeouts
+        for req in requests:
+            assert 0 <= req.timeout <= 86400
+
+    def test_concurrent_serialization(self):
+        """Test concurrent serialization of requests"""
+        import concurrent.futures
+
+        def create_and_serialize(i):
+            req = CancelAllOrdersAfterRequest(timeout=60 + i)
+            return req.to_api_dict()
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+            dicts = list(executor.map(create_and_serialize, range(50)))
+
+        assert len(dicts) == 50
+
+        # All should have valid structure with timeout field
+        for i, d in enumerate(dicts):
+            assert "timeout" in d
+            assert d["timeout"] == 60 + i
+
+    def test_rapid_toggle_timer(self):
+        """Test rapid toggling between enabling and disabling timer"""
+        requests = []
+        for i in range(100):
+            if i % 2 == 0:
+                req = CancelAllOrdersAfterRequest(timeout=60)
+            else:
+                req = CancelAllOrdersAfterRequest(timeout=0)
+            requests.append(req)
+
+        # All should be valid
+        assert len(requests) == 100
+
+        # Check alternating pattern
+        for i, req in enumerate(requests):
+            if i % 2 == 0:
+                assert req.timeout == 60
+            else:
+                assert req.timeout == 0
