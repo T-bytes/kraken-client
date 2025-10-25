@@ -1090,12 +1090,16 @@ class CancelAllOrdersAfterSuccess(BaseSchema):
     Contains the current time and trigger time for the dead man's switch.
     """
 
-    currentTime: str = Field(
+    current_time: str = Field(
         ...,
+        alias="currentTime",
+        validation_alias="currentTime",
         description="Timestamp (RFC3339 format) at which the request was received.",
     )
-    triggerTime: str = Field(
+    trigger_time: str = Field(
         ...,
+        alias="triggerTime",
+        validation_alias="triggerTime",
         description="Timestamp (RFC3339 format) after which all orders will be cancelled, unless the timer is extended or disabled.",
     )
 
@@ -1479,7 +1483,7 @@ class AddOrderBatchRequest(BaseSchema):
         >>> batch = AddOrderBatchRequest(
         ...     orders=[...],
         ...     pair="XBTUSD",
-        ...     validate=True
+        ...     only_validate=True
         ... )
     """
 
@@ -1497,9 +1501,11 @@ class AddOrderBatchRequest(BaseSchema):
         default=None,
         description="RFC3339 timestamp after which the matching engine should reject the batch request.",
     )
-    validate: bool = Field(
+    only_validate: bool = Field(
         default=False,
         description="If True, validates batch inputs without placing orders.",
+        validation_alias=AliasChoices("only_validate", "validate"),  # Accept both names
+        serialization_alias="validate",  # Send as 'validate' to API
     )
 
     @field_validator("orders", mode="after")

@@ -470,7 +470,7 @@ class TestAddOrderRequest:
         assert order.price == "50000"
 
         # Invalid limit order without price
-        with pytest.raises(ValidationError, match="Limit orders require 'price'"):
+        with pytest.raises(ValidationError, match="(?i)limit orders require 'price'"):
             AddOrderRequest(
                 ordertype="limit",
                 type="buy",
@@ -480,7 +480,7 @@ class TestAddOrderRequest:
 
     def test_field_dependency_validation_iceberg_order(self):
         """Test that iceberg orders require price field"""
-        with pytest.raises(ValidationError, match="Iceberg orders require 'price'"):
+        with pytest.raises(ValidationError, match="(?i)iceberg orders require 'price'"):
             AddOrderRequest(
                 ordertype="iceberg",
                 type="buy",
@@ -1964,8 +1964,8 @@ class TestCancelAllOrdersAfterResponse:
         assert response.is_success is True
         assert response.success is not None
         assert response.error is None
-        assert response.success.currentTime == "2025-01-15T12:00:00Z"
-        assert response.success.triggerTime == "2025-01-15T12:01:00Z"
+        assert response.success.current_time == "2025-01-15T12:00:00Z"
+        assert response.success.trigger_time == "2025-01-15T12:01:00Z"
 
     def test_success_response_with_zero_timeout(self):
         """Test parsing response when timer is disabled (timeout=0)"""
@@ -1980,8 +1980,8 @@ class TestCancelAllOrdersAfterResponse:
         response = CancelAllOrdersAfterResponse.from_response(kraken_response)
 
         assert response.is_success is True
-        assert response.success.currentTime == "2025-01-15T12:00:00Z"
-        assert response.success.triggerTime == "0"
+        assert response.success.current_time == "2025-01-15T12:00:00Z"
+        assert response.success.trigger_time == "0"
 
     def test_error_response_parsing(self):
         """Test parsing an error response"""
@@ -2027,8 +2027,8 @@ class TestCancelAllOrdersAfterResponse:
         response = CancelAllOrdersAfterResponse.from_response(json_response)
 
         assert response.is_success is True
-        assert response.success.currentTime == "2025-01-15T14:30:00Z"
-        assert response.success.triggerTime == "2025-01-15T14:31:00Z"
+        assert response.success.current_time == "2025-01-15T14:30:00Z"
+        assert response.success.trigger_time == "2025-01-15T14:31:00Z"
 
     def test_invalid_response_format(self):
         """Test that invalid response format raises appropriate error"""
@@ -2043,8 +2043,8 @@ class TestCancelAllOrdersAfterResponse:
             currentTime="2025-01-15T10:00:00Z", triggerTime="2025-01-15T10:01:00Z"
         )
 
-        assert success.currentTime == "2025-01-15T10:00:00Z"
-        assert success.triggerTime == "2025-01-15T10:01:00Z"
+        assert success.current_time == "2025-01-15T10:00:00Z"
+        assert success.trigger_time == "2025-01-15T10:01:00Z"
 
     def test_error_model_direct_instantiation(self):
         """Test creating error response directly"""
@@ -2061,7 +2061,7 @@ class TestCancelAllOrdersAfterResponse:
         response = CancelAllOrdersAfterResponse(success=success)
 
         assert response.is_success is True
-        assert response.success.currentTime == "2025-01-15T10:00:00Z"
+        assert response.success.current_time == "2025-01-15T10:00:00Z"
 
         error = ResponseErrorSchema(error=["Test error"])
         response2 = CancelAllOrdersAfterResponse(error=error)
@@ -2091,8 +2091,8 @@ class TestCancelAllOrdersAfterResponse:
             response = CancelAllOrdersAfterResponse.from_response(kraken_response)
 
             assert response.is_success is True
-            assert response.success.currentTime == current
-            assert response.success.triggerTime == trigger
+            assert response.success.current_time == current
+            assert response.success.trigger_time == trigger
 
 
 class TestConcurrentCancelAllOrdersAfterScenarios:
@@ -2512,7 +2512,7 @@ class TestBatchOrderItem:
 
     def test_field_dependency_validation(self):
         """Test that limit orders require price field"""
-        with pytest.raises(ValidationError, match="Limit orders require 'price'"):
+        with pytest.raises(ValidationError, match="(?i)limit orders require 'price'"):
             BatchOrderItem(
                 ordertype="limit",
                 type="buy",
@@ -2646,10 +2646,31 @@ class TestAddOrderBatchRequest:
                 BatchOrderItem(ordertype="market", type="buy", volume=0.5),
             ],
             pair="XBTUSD",
-            validate=True,
+            only_validate=True,
         )
 
-        assert batch.validate is True
+        assert batch.only_validate is True
+
+    def test_validate_flag_alias(self):
+        """Test that 'validate' alias works for backward compatibility"""
+        # Test that we can use the 'validate' alias when instantiating
+        batch = AddOrderBatchRequest(
+            orders=[
+                BatchOrderItem(ordertype="market", type="buy", volume=1.0),
+                BatchOrderItem(ordertype="market", type="buy", volume=0.5),
+            ],
+            pair="XBTUSD",
+            validate=True,  # Using the alias
+        )
+
+        # The field name is 'only_validate'
+        assert batch.only_validate is True
+
+        # Verify it serializes as 'validate' to the API
+        data = batch.to_api_dict()
+        assert "validate" in data
+        assert data["validate"] is True
+        assert "only_validate" not in data
 
     def test_asset_class_for_xstocks(self):
         """Test asset_class parameter for tokenized assets"""
