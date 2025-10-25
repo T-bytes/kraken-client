@@ -64,6 +64,7 @@ from kraken.exceptions import (
     KrakenTimeoutError,
 )
 from kraken.rest.endpoint import KrakenEndpoint
+from kraken.rest.schema.trading import AddOrderRequest
 from kraken.utilities import get_nonce
 
 logger = logging.getLogger(__name__)
@@ -212,6 +213,33 @@ class KrakenRESTClient:
         signature = hmac.new(self.api_secret, message, hashlib.sha512)
         return base64.b64encode(signature.digest()).decode()
 
+    def _prepare_order_data(self, endpoint: str, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Prepare order data by adding deadline at request time if needed.
+
+        This method handles time-sensitive fields that must be computed at
+        request signing time rather than order instantiation time to prevent
+        stale timestamps in async/queued scenarios.
+
+        Args:
+            endpoint: The API endpoint name
+            data: Request data dictionary
+
+        Returns:
+            Modified data dictionary with deadline added if applicable
+        """
+        try:
+            match endpoint:
+                case "AddOrder":
+                    data["deadline"] = AddOrderRequest.compute_deadline()
+                    logger.debug(f"Generated deadline at request time: {data['deadline']}")
+                case _:
+                    raise NotImplementedError(f"Endpoint '{endpoint}' is not supported")
+        except NotImplementedError as e:
+            logger.warning(str(e))
+        except Exception as e:
+            logger.error(f"Unable to prepare order: {str(e)}")
+        return data
+
     # Synchronous public methods
     def request(self, endpoint: str, **kwargs) -> Dict[str, Any]:
         """Make a synchronous request to the Kraken API.
@@ -256,20 +284,21 @@ class KrakenRESTClient:
 
         # Send request
         try:
-            if api_type.is_private(): # Private endpoint - requires auth and always uses POST
+            if api_type.is_private():  # Private endpoint - requires auth and always uses POST
                 if not self.api_key or not self.api_secret:
                     raise ValueError(
                         "API key and secret required for private endpoints. Set `KRAKEN_API_KEY` and `KRAKEN_API_SECRET` environment variables."
                     )
-                nonce = str(get_nonce())
                 data = kwargs.pop("data", kwargs.pop("params", {}))
+                data = self._prepare_order_data(endpoint, data)
+                nonce = str(get_nonce())
                 data["nonce"] = nonce
                 signature = self._sign_request(url_path, data, nonce)
                 headers["API-Key"] = self.api_key
                 headers["API-Sign"] = signature
                 logger.debug(f"Making authenticated POST request to {endpoint}")
                 response = client.post(url, data=data, headers=headers, **kwargs)
-            else: # Public endpoint - always uses GET
+            else:  # Public endpoint - always uses GET
                 logger.debug(f"Making public GET request to {endpoint}")
                 response = client.get(url, headers=headers, **kwargs)
             response.raise_for_status()
@@ -344,20 +373,21 @@ class KrakenRESTClient:
 
         # Send request
         try:
-            if api_type.is_private(): # Private endpoint - requires auth and always uses POST
+            if api_type.is_private():  # Private endpoint - requires auth and always uses POST
                 if not self.api_key or not self.api_secret:
                     raise ValueError(
                         "API key and secret required for private endpoints. Set `KRAKEN_API_KEY` and `KRAKEN_API_SECRET` environment variables."
                     )
-                nonce = str(get_nonce())
                 data = kwargs.pop("data", kwargs.pop("params", {}))
+                data = self._prepare_order_data(endpoint, data)
+                nonce = str(get_nonce())
                 data["nonce"] = nonce
                 signature = self._sign_request(url_path, data, nonce)
                 headers["API-Key"] = self.api_key
                 headers["API-Sign"] = signature
                 logger.debug(f"Making authenticated async POST request to {endpoint}")
                 response = await client.post(url, data=data, headers=headers, **kwargs)
-            else: # Public endpoint - always uses GET
+            else:  # Public endpoint - always uses GET
                 logger.debug(f"Making public async GET request to {endpoint}")
                 response = await client.get(url, headers=headers, **kwargs)
             response.raise_for_status()
@@ -384,7 +414,7 @@ class KrakenRESTClient:
             error_msg = ", ".join(data["error"])
             logger.error(f"API error for {endpoint}: {error_msg}")
             raise KrakenAPIError(f"API error: {error_msg}")
-        
+
         logger.info(f"Successfully completed async request to {endpoint}")
         return data
 

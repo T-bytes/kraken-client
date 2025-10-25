@@ -61,6 +61,7 @@ class TestAddOrderRequest:
             type="sell",
             volume=1,
             pair="XBTUSD",
+            price="48000",  # stop-loss orders require price
         )
 
         assert order2.ordertype == "stop-loss"
@@ -243,6 +244,7 @@ class TestAddOrderRequest:
             pair="XBTUSD",
             price="50000",
             timeinforce="  gtd  ",
+            expiretm="60",  # GTD orders require expiretm
         )
         assert order2.timeinforce == "GTD"
 
@@ -258,7 +260,7 @@ class TestAddOrderRequest:
         assert order3.timeinforce == "PO"
 
     def test_deadline_optional_when_not_provided(self):
-        """Test that deadline is optional and can be None"""
+        """Test that deadline is optional and remains None until REST client adds it"""
         order = AddOrderRequest(
             ordertype="market",
             type="buy",
@@ -266,8 +268,8 @@ class TestAddOrderRequest:
             pair="XBTUSD",
         )
 
-        # Deadline is optional, defaults to None
-        # The REST client or application can set it before sending
+        # Deadline is NOT auto-generated to prevent race conditions
+        # The REST client will generate it at request signing time
         assert order.deadline is None
 
     def test_deadline_bounding(self):
@@ -389,6 +391,172 @@ class TestAddOrderRequest:
 
         # Should not have a nonce attribute
         assert not hasattr(order, "nonce")
+
+    def test_to_api_dict_method(self):
+        """Test to_api_dict() serialization helper method"""
+        order = AddOrderRequest(
+            ordertype="limit",
+            type="buy",
+            volume=1.5,
+            pair="XBTUSD",
+            price="50000",
+            only_validate=True,
+        )
+
+        # to_api_dict() should use by_alias=True and exclude_none=True
+        data = order.to_api_dict()
+
+        # Field aliasing: only_validate -> validate
+        assert "validate" in data
+        assert "only_validate" not in data
+        assert data["validate"] is True
+
+        # None values should be excluded by default
+        assert "deadline" not in data
+        assert "leverage" not in data
+
+        # Test exclude_none=False
+        data_with_none = order.to_api_dict(exclude_none=False)
+        assert "deadline" in data_with_none
+        assert data_with_none["deadline"] is None
+
+    def test_compute_deadline_static_method(self):
+        """Test the static compute_deadline() method"""
+        deadline_str = AddOrderRequest.compute_deadline()
+
+        # Should be a valid ISO format timestamp
+        deadline = datetime.fromisoformat(deadline_str)
+        assert deadline.tzinfo is not None
+
+        # Should be between 2-60 seconds from now
+        now = datetime.now(timezone.utc)
+        time_diff = (deadline - now).total_seconds()
+        assert 2 <= time_diff <= 60
+
+    def test_field_dependency_validation_limit_order(self):
+        """Test that limit orders require price field"""
+        # Valid limit order with price
+        order = AddOrderRequest(
+            ordertype="limit",
+            type="buy",
+            volume=1,
+            pair="XBTUSD",
+            price="50000",
+        )
+        assert order.price == "50000"
+
+        # Invalid limit order without price
+        with pytest.raises(ValidationError, match="Limit orders require 'price'"):
+            AddOrderRequest(
+                ordertype="limit",
+                type="buy",
+                volume=1,
+                pair="XBTUSD",
+            )
+
+    def test_field_dependency_validation_iceberg_order(self):
+        """Test that iceberg orders require price field"""
+        with pytest.raises(ValidationError, match="Iceberg orders require 'price'"):
+            AddOrderRequest(
+                ordertype="iceberg",
+                type="buy",
+                volume=10,
+                pair="XBTUSD",
+            )
+
+    def test_field_dependency_validation_stop_loss_limit(self):
+        """Test that stop-loss-limit orders require both price and price2"""
+        # Missing both
+        with pytest.raises(
+            ValidationError, match="stop-loss-limit orders require both 'price' and 'price2'"
+        ):
+            AddOrderRequest(
+                ordertype="stop-loss-limit",
+                type="sell",
+                volume=1,
+                pair="XBTUSD",
+            )
+
+        # Missing price2
+        with pytest.raises(
+            ValidationError, match="stop-loss-limit orders require both 'price' and 'price2'"
+        ):
+            AddOrderRequest(
+                ordertype="stop-loss-limit",
+                type="sell",
+                volume=1,
+                pair="XBTUSD",
+                price="48000",
+            )
+
+        # Valid with both
+        order = AddOrderRequest(
+            ordertype="stop-loss-limit",
+            type="sell",
+            volume=1,
+            pair="XBTUSD",
+            price="48000",
+            price2="47500",
+        )
+        assert order.price == "48000"
+        assert order.price2 == "47500"
+
+    def test_field_dependency_validation_gtd_order(self):
+        """Test that GTD orders require expiretm field"""
+        with pytest.raises(ValidationError, match="GTD .* orders require 'expiretm'"):
+            AddOrderRequest(
+                ordertype="limit",
+                type="buy",
+                volume=1,
+                pair="XBTUSD",
+                price="50000",
+                timeinforce="GTD",
+            )
+
+        # Valid GTD with expiretm
+        order = AddOrderRequest(
+            ordertype="limit",
+            type="buy",
+            volume=1,
+            pair="XBTUSD",
+            price="50000",
+            timeinforce="GTD",
+            expiretm="60",
+        )
+        assert order.expiretm == "60"
+
+    def test_field_dependency_validation_mutually_exclusive(self):
+        """Test that userref and cl_ord_id are mutually exclusive"""
+        # Both set - should fail
+        with pytest.raises(ValidationError, match="mutually exclusive"):
+            AddOrderRequest(
+                ordertype="market",
+                type="buy",
+                volume=1,
+                pair="XBTUSD",
+                userref=12345,
+                cl_ord_id="my-order-id",
+            )
+
+        # Only userref - should succeed
+        order1 = AddOrderRequest(
+            ordertype="market",
+            type="buy",
+            volume=1,
+            pair="XBTUSD",
+            userref=12345,
+        )
+        assert order1.userref == 12345
+
+        # Only cl_ord_id - should succeed
+        order2 = AddOrderRequest(
+            ordertype="market",
+            type="buy",
+            volume=1,
+            pair="XBTUSD",
+            cl_ord_id="my-order-id",
+        )
+        assert order2.cl_ord_id == "my-order-id"
 
 
 class TestAddOrderResponse:

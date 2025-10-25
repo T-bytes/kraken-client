@@ -19,13 +19,43 @@ class TestBoolFromStr:
 
     def test_true_string_variations(self):
         """Test all string variations that should return True."""
-        true_values = ["true", "True", "TRUE", "t", "T", "yes", "Yes", "YES", "y", "Y", "on", "On", "ON", "1"]
+        true_values = [
+            "true",
+            "True",
+            "TRUE",
+            "t",
+            "T",
+            "yes",
+            "Yes",
+            "YES",
+            "y",
+            "Y",
+            "on",
+            "On",
+            "ON",
+            "1",
+        ]
         for value in true_values:
             assert bool_from_str(value) is True, f"Failed for value: {value}"
 
     def test_false_string_variations(self):
         """Test all string variations that should return False."""
-        false_values = ["false", "False", "FALSE", "f", "F", "no", "No", "NO", "n", "N", "off", "Off", "OFF", "0"]
+        false_values = [
+            "false",
+            "False",
+            "FALSE",
+            "f",
+            "F",
+            "no",
+            "No",
+            "NO",
+            "n",
+            "N",
+            "off",
+            "Off",
+            "OFF",
+            "0",
+        ]
         for value in false_values:
             assert bool_from_str(value) is False, f"Failed for value: {value}"
 
