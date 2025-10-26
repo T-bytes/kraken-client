@@ -6,6 +6,11 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from pydantic import ValidationError
 
+from kraken.rest.schema.market import (
+    GetServerTimeRequest,
+    GetServerTimeResponse,
+    GetServerTimeSuccess,
+)
 from kraken.rest.schema.trading import (
     AddOrderBatchRequest,
     AddOrderBatchResponse,
@@ -3226,3 +3231,305 @@ class TestConcurrentCancelOrderBatchScenarios:
 
         assert len(batch1.orders) == 50
         assert len(batch2.cl_ord_ids) == 50
+
+
+class TestGetServerTimeRequest:
+    """Tests for GetServerTimeRequest schema"""
+
+    def test_minimal_valid_request(self):
+        """Test creating a minimal valid request"""
+        server_time_request = GetServerTimeRequest()
+
+        # Should be valid with no required fields
+        assert server_time_request is not None
+
+    def test_no_nonce_field(self):
+        """Test that nonce is not present in schema (handled by REST client)"""
+        server_time_request = GetServerTimeRequest()
+
+        # Should not have a nonce attribute
+        assert not hasattr(server_time_request, "nonce")
+
+    def test_to_api_dict_method(self):
+        """Test to_api_dict() serialization helper method"""
+        server_time_request = GetServerTimeRequest()
+
+        # to_api_dict() should use by_alias=True and exclude_none=True
+        data = server_time_request.to_api_dict()
+
+        # Should return an empty dict (no fields except nonce which is added by client)
+        assert data == {}
+
+        # Test exclude_none=False
+        data_with_none = server_time_request.to_api_dict(exclude_none=False)
+        assert data_with_none == {}
+
+    def test_multiple_instances(self):
+        """Test creating multiple GetServerTimeRequest instances"""
+        requests = [GetServerTimeRequest() for _ in range(10)]
+
+        # All should be valid
+        assert len(requests) == 10
+        for req in requests:
+            assert req is not None
+
+    def test_concurrent_creation(self):
+        """Test concurrent creation of multiple requests"""
+        import concurrent.futures
+
+        def create_request(i):
+            return GetServerTimeRequest()
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            requests = list(executor.map(create_request, range(20)))
+
+        assert len(requests) == 20
+        for req in requests:
+            assert req is not None
+
+
+class TestGetServerTimeResponse:
+    """Tests for GetServerTime response schemas"""
+
+    def test_success_response_parsing(self):
+        """Test parsing a successful response"""
+        kraken_response = {
+            "error": [],
+            "result": {
+                "unixtime": 1632931626,
+                "rfc1123": "Tue, 29 Sep 2021 13:27:06 GMT",
+            },
+        }
+
+        response = GetServerTimeResponse.from_response(kraken_response)
+
+        assert response.is_success is True
+        assert response.success is not None
+        assert response.failure is None
+        assert response.success.unixtime == 1632931626
+        assert response.success.rfc1123 == "Tue, 29 Sep 2021 13:27:06 GMT"
+
+    def test_success_response_various_timestamps(self):
+        """Test parsing responses with various timestamp values"""
+        # Recent timestamp (2025)
+        kraken_response = {
+            "error": [],
+            "result": {
+                "unixtime": 1735689600,
+                "rfc1123": "Wed, 01 Jan 2025 00:00:00 GMT",
+            },
+        }
+
+        response = GetServerTimeResponse.from_response(kraken_response)
+
+        assert response.is_success is True
+        assert response.success.unixtime == 1735689600
+        assert response.success.rfc1123 == "Wed, 01 Jan 2025 00:00:00 GMT"
+
+        # Earlier timestamp (2020)
+        kraken_response2 = {
+            "error": [],
+            "result": {
+                "unixtime": 1577836800,
+                "rfc1123": "Wed, 01 Jan 2020 00:00:00 GMT",
+            },
+        }
+
+        response2 = GetServerTimeResponse.from_response(kraken_response2)
+
+        assert response2.is_success is True
+        assert response2.success.unixtime == 1577836800
+        assert response2.success.rfc1123 == "Wed, 01 Jan 2020 00:00:00 GMT"
+
+    def test_error_response_parsing(self):
+        """Test parsing an error response"""
+        kraken_response = {
+            "error": ["EGeneral:Internal error"],
+        }
+
+        response = GetServerTimeResponse.from_response(kraken_response)
+
+        assert response.is_success is False
+        assert response.success is None
+        assert response.failure is not None
+        assert "EGeneral:Internal error" in response.failure.error
+
+    def test_multiple_errors(self):
+        """Test parsing response with multiple errors"""
+        kraken_response = {
+            "error": [
+                "EGeneral:Internal error",
+                "EAPI:Rate limit exceeded",
+            ],
+        }
+
+        response = GetServerTimeResponse.from_response(kraken_response)
+
+        assert response.is_success is False
+        assert len(response.failure.error) == 2
+        assert "EGeneral:Internal error" in response.failure.error
+        assert "EAPI:Rate limit exceeded" in response.failure.error
+
+    def test_from_json_string(self):
+        """Test parsing from JSON string"""
+        json_response = json.dumps(
+            {
+                "error": [],
+                "result": {
+                    "unixtime": 1700000000,
+                    "rfc1123": "Tue, 14 Nov 2023 22:13:20 GMT",
+                },
+            }
+        )
+
+        response = GetServerTimeResponse.from_response(json_response)
+
+        assert response.is_success is True
+        assert response.success.unixtime == 1700000000
+        assert response.success.rfc1123 == "Tue, 14 Nov 2023 22:13:20 GMT"
+
+    def test_invalid_response_format(self):
+        """Test that invalid response format raises appropriate error"""
+        invalid_response = {"error": []}  # Missing 'result'
+
+        with pytest.raises(ValueError, match="missing 'result'"):
+            GetServerTimeResponse.from_response(invalid_response)
+
+    def test_success_model_direct_instantiation(self):
+        """Test creating GetServerTimeSuccess directly"""
+        success = GetServerTimeSuccess(
+            unixtime=1609459200,
+            rfc1123="Fri, 01 Jan 2021 00:00:00 GMT",
+        )
+
+        assert success.unixtime == 1609459200
+        assert success.rfc1123 == "Fri, 01 Jan 2021 00:00:00 GMT"
+
+    def test_success_model_field_types(self):
+        """Test that field types are enforced"""
+        # Valid types
+        success = GetServerTimeSuccess(
+            unixtime=1234567890,
+            rfc1123="Fri, 13 Feb 2009 23:31:30 GMT",
+        )
+
+        assert isinstance(success.unixtime, int)
+        assert isinstance(success.rfc1123, str)
+
+    def test_error_model_direct_instantiation(self):
+        """Test creating error response directly"""
+        from kraken.rest.schema.base import ResponseErrorSchema
+
+        error = ResponseErrorSchema(error=["EGeneral:Internal error"])
+
+        assert len(error.error) == 1
+        assert error.error[0] == "EGeneral:Internal error"
+
+    def test_response_wrapper_direct_instantiation(self):
+        """Test creating GetServerTimeResponse wrapper directly"""
+        success = GetServerTimeSuccess(
+            unixtime=1600000000,
+            rfc1123="Sun, 13 Sep 2020 12:26:40 GMT",
+        )
+        response = GetServerTimeResponse(success=success)
+
+        assert response.is_success is True
+        assert response.success.unixtime == 1600000000
+
+        from kraken.rest.schema.base import ResponseErrorSchema
+
+        error = ResponseErrorSchema(error=["Test error"])
+        response2 = GetServerTimeResponse(failure=error)
+
+        assert response2.is_success is False
+        assert response2.failure.error[0] == "Test error"
+
+    def test_rfc1123_format_validation(self):
+        """Test that various RFC 1123 formats are accepted"""
+        # Standard format
+        success1 = GetServerTimeSuccess(
+            unixtime=1632931626,
+            rfc1123="Tue, 29 Sep 2021 13:27:06 GMT",
+        )
+        assert success1.rfc1123 == "Tue, 29 Sep 2021 13:27:06 GMT"
+
+        # Different day/month
+        success2 = GetServerTimeSuccess(
+            unixtime=1609459200,
+            rfc1123="Fri, 01 Jan 2021 00:00:00 GMT",
+        )
+        assert success2.rfc1123 == "Fri, 01 Jan 2021 00:00:00 GMT"
+
+    def test_concurrent_response_parsing(self):
+        """Test concurrent parsing of multiple responses"""
+        import concurrent.futures
+
+        def parse_response(i):
+            kraken_response = {
+                "error": [],
+                "result": {
+                    "unixtime": 1632931626 + i,
+                    "rfc1123": "Tue, 29 Sep 2021 13:27:06 GMT",
+                },
+            }
+            return GetServerTimeResponse.from_response(kraken_response)
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            responses = list(executor.map(parse_response, range(20)))
+
+        assert len(responses) == 20
+        for i, resp in enumerate(responses):
+            assert resp.is_success is True
+            assert resp.success.unixtime == 1632931626 + i
+
+    def test_response_immutability(self):
+        """Test that response objects maintain their data correctly"""
+        kraken_response = {
+            "error": [],
+            "result": {
+                "unixtime": 1632931626,
+                "rfc1123": "Tue, 29 Sep 2021 13:27:06 GMT",
+            },
+        }
+
+        response = GetServerTimeResponse.from_response(kraken_response)
+
+        # Store original values
+        original_unixtime = response.success.unixtime
+        original_rfc1123 = response.success.rfc1123
+
+        # Values should remain unchanged
+        assert response.success.unixtime == original_unixtime
+        assert response.success.rfc1123 == original_rfc1123
+
+    def test_zero_unixtime_edge_case(self):
+        """Test handling of zero unixtime (Unix epoch)"""
+        kraken_response = {
+            "error": [],
+            "result": {
+                "unixtime": 0,
+                "rfc1123": "Thu, 01 Jan 1970 00:00:00 GMT",
+            },
+        }
+
+        response = GetServerTimeResponse.from_response(kraken_response)
+
+        assert response.is_success is True
+        assert response.success.unixtime == 0
+        assert response.success.rfc1123 == "Thu, 01 Jan 1970 00:00:00 GMT"
+
+    def test_large_unixtime_future_date(self):
+        """Test handling of large unixtime values (far future)"""
+        kraken_response = {
+            "error": [],
+            "result": {
+                "unixtime": 2147483647,  # Year 2038 problem boundary
+                "rfc1123": "Tue, 19 Jan 2038 03:14:07 GMT",
+            },
+        }
+
+        response = GetServerTimeResponse.from_response(kraken_response)
+
+        assert response.is_success is True
+        assert response.success.unixtime == 2147483647
+        assert response.success.rfc1123 == "Tue, 19 Jan 2038 03:14:07 GMT"
