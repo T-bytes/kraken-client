@@ -445,8 +445,10 @@ class TestAddOrderRequest:
         assert data_with_none["deadline"] is None
 
     def test_compute_deadline_static_method(self):
-        """Test the static compute_deadline() method"""
-        deadline_str = AddOrderRequest.compute_deadline()
+        """Test the static compute_deadline() method (now in validators module)"""
+        from kraken.rest.schema import validators
+
+        deadline_str = validators.compute_deadline()
 
         # Should be a valid ISO format timestamp
         deadline = datetime.fromisoformat(deadline_str)
@@ -603,7 +605,7 @@ class TestAddOrderResponse:
 
         assert response.is_success is True
         assert response.success is not None
-        assert response.error is None
+        assert response.failure is None
         assert response.success.txid == ["OUF4EM-FRGI2-MQMWZD"]
         assert "buy 1.00000000 XBTUSD" in response.success.order_description
 
@@ -635,8 +637,8 @@ class TestAddOrderResponse:
 
         assert response.is_success is False
         assert response.success is None
-        assert response.error is not None
-        assert "EGeneral:Invalid arguments" in response.error.error
+        assert response.failure is not None
+        assert "EGeneral:Invalid arguments" in response.failure.error
 
     def test_multiple_errors(self):
         """Test parsing response with multiple errors"""
@@ -650,9 +652,9 @@ class TestAddOrderResponse:
         response = AddOrderResponse.from_response(kraken_response)
 
         assert response.is_success is False
-        assert len(response.error.error) == 2
-        assert "EGeneral:Invalid arguments" in response.error.error
-        assert "EOrder:Insufficient funds" in response.error.error
+        assert len(response.failure.error) == 2
+        assert "EGeneral:Invalid arguments" in response.failure.error
+        assert "EOrder:Insufficient funds" in response.failure.error
 
     def test_from_json_string(self):
         """Test parsing from JSON string"""
@@ -1011,8 +1013,10 @@ class TestAmendOrderRequest:
         assert data_with_none["deadline"] is None
 
     def test_compute_deadline_static_method(self):
-        """Test the static compute_deadline() method"""
-        deadline_str = AmendOrderRequest.compute_deadline()
+        """Test the static compute_deadline() method (now in validators module)"""
+        from kraken.rest.schema import validators
+
+        deadline_str = validators.compute_deadline()
 
         # Should be a valid ISO format timestamp
         deadline = datetime.fromisoformat(deadline_str)
@@ -1069,7 +1073,7 @@ class TestAmendOrderResponse:
 
         assert response.is_success is True
         assert response.success is not None
-        assert response.error is None
+        assert response.failure is None
         assert response.success.amend_id == "AMEND-123-456-789"
 
     def test_error_response_parsing(self):
@@ -1082,8 +1086,8 @@ class TestAmendOrderResponse:
 
         assert response.is_success is False
         assert response.success is None
-        assert response.error is not None
-        assert "EGeneral:Invalid arguments" in response.error.error
+        assert response.failure is not None
+        assert "EGeneral:Invalid arguments" in response.failure.error
 
     def test_multiple_errors(self):
         """Test parsing response with multiple errors"""
@@ -1097,9 +1101,9 @@ class TestAmendOrderResponse:
         response = AmendOrderResponse.from_response(kraken_response)
 
         assert response.is_success is False
-        assert len(response.error.error) == 2
-        assert "EGeneral:Invalid arguments" in response.error.error
-        assert "EOrder:Order not found" in response.error.error
+        assert len(response.failure.error) == 2
+        assert "EGeneral:Invalid arguments" in response.failure.error
+        assert "EOrder:Order not found" in response.failure.error
 
     def test_from_json_string(self):
         """Test parsing from JSON string"""
@@ -1146,10 +1150,10 @@ class TestAmendOrderResponse:
         assert response.success.amend_id == "WRAPPER-TEST"
 
         error = ResponseErrorSchema(error=["Test error"])
-        response2 = AmendOrderResponse(error=error)
+        response2 = AmendOrderResponse(failure=error)
 
         assert response2.is_success is False
-        assert response2.error.error[0] == "Test error"
+        assert response2.failure.error[0] == "Test error"
 
 
 class TestConcurrentAmendScenarios:
@@ -1380,7 +1384,7 @@ class TestCancelOrderResponse:
 
         assert response.is_success is True
         assert response.success is not None
-        assert response.error is None
+        assert response.failure is None
         assert response.success.count == 1
         assert response.success.pending is None
 
@@ -1440,8 +1444,8 @@ class TestCancelOrderResponse:
 
         assert response.is_success is False
         assert response.success is None
-        assert response.error is not None
-        assert "EOrder:Unknown order" in response.error.error
+        assert response.failure is not None
+        assert "EOrder:Unknown order" in response.failure.error
 
     def test_multiple_errors(self):
         """Test parsing response with multiple errors"""
@@ -1455,9 +1459,9 @@ class TestCancelOrderResponse:
         response = CancelOrderResponse.from_response(kraken_response)
 
         assert response.is_success is False
-        assert len(response.error.error) == 2
-        assert "EGeneral:Invalid arguments" in response.error.error
-        assert "EOrder:Unknown order" in response.error.error
+        assert len(response.failure.error) == 2
+        assert "EGeneral:Invalid arguments" in response.failure.error
+        assert "EOrder:Unknown order" in response.failure.error
 
     def test_from_json_string(self):
         """Test parsing from JSON string"""
@@ -1512,10 +1516,10 @@ class TestCancelOrderResponse:
         assert response.success.count == 3
 
         error = ResponseErrorSchema(error=["Test error"])
-        response2 = CancelOrderResponse(error=error)
+        response2 = CancelOrderResponse(failure=error)
 
         assert response2.is_success is False
-        assert response2.error.error[0] == "Test error"
+        assert response2.failure.error[0] == "Test error"
 
     def test_zero_count_response(self):
         """Test handling response with zero count (edge case)"""
@@ -1672,7 +1676,7 @@ class TestCancelAllResponse:
 
         assert response.is_success is True
         assert response.success is not None
-        assert response.error is None
+        assert response.failure is None
         assert response.success.count == 1
         assert response.success.pending is None
 
@@ -1732,8 +1736,8 @@ class TestCancelAllResponse:
 
         assert response.is_success is False
         assert response.success is None
-        assert response.error is not None
-        assert "EGeneral:Permission denied" in response.error.error
+        assert response.failure is not None
+        assert "EGeneral:Permission denied" in response.failure.error
 
     def test_multiple_errors(self):
         """Test parsing response with multiple errors"""
@@ -1747,9 +1751,9 @@ class TestCancelAllResponse:
         response = CancelAllResponse.from_response(kraken_response)
 
         assert response.is_success is False
-        assert len(response.error.error) == 2
-        assert "EGeneral:Invalid arguments" in response.error.error
-        assert "EGeneral:Permission denied" in response.error.error
+        assert len(response.failure.error) == 2
+        assert "EGeneral:Invalid arguments" in response.failure.error
+        assert "EGeneral:Permission denied" in response.failure.error
 
     def test_from_json_string(self):
         """Test parsing from JSON string"""
@@ -1804,10 +1808,10 @@ class TestCancelAllResponse:
         assert response.success.count == 5
 
         error = ResponseErrorSchema(error=["Test error"])
-        response2 = CancelAllResponse(error=error)
+        response2 = CancelAllResponse(failure=error)
 
         assert response2.is_success is False
-        assert response2.error.error[0] == "Test error"
+        assert response2.failure.error[0] == "Test error"
 
     def test_zero_count_response(self):
         """Test handling response with zero count (edge case - no open orders)"""
@@ -1963,7 +1967,7 @@ class TestCancelAllOrdersAfterResponse:
 
         assert response.is_success is True
         assert response.success is not None
-        assert response.error is None
+        assert response.failure is None
         assert response.success.current_time == "2025-01-15T12:00:00Z"
         assert response.success.trigger_time == "2025-01-15T12:01:00Z"
 
@@ -1993,8 +1997,8 @@ class TestCancelAllOrdersAfterResponse:
 
         assert response.is_success is False
         assert response.success is None
-        assert response.error is not None
-        assert "EGeneral:Invalid arguments" in response.error.error
+        assert response.failure is not None
+        assert "EGeneral:Invalid arguments" in response.failure.error
 
     def test_multiple_errors(self):
         """Test parsing response with multiple errors"""
@@ -2008,9 +2012,9 @@ class TestCancelAllOrdersAfterResponse:
         response = CancelAllOrdersAfterResponse.from_response(kraken_response)
 
         assert response.is_success is False
-        assert len(response.error.error) == 2
-        assert "EGeneral:Invalid arguments" in response.error.error
-        assert "EGeneral:Permission denied" in response.error.error
+        assert len(response.failure.error) == 2
+        assert "EGeneral:Invalid arguments" in response.failure.error
+        assert "EGeneral:Permission denied" in response.failure.error
 
     def test_from_json_string(self):
         """Test parsing from JSON string"""
@@ -2064,10 +2068,10 @@ class TestCancelAllOrdersAfterResponse:
         assert response.success.current_time == "2025-01-15T10:00:00Z"
 
         error = ResponseErrorSchema(error=["Test error"])
-        response2 = CancelAllOrdersAfterResponse(error=error)
+        response2 = CancelAllOrdersAfterResponse(failure=error)
 
         assert response2.is_success is False
-        assert response2.error.error[0] == "Test error"
+        assert response2.failure.error[0] == "Test error"
 
     def test_rfc3339_timestamp_format(self):
         """Test that various RFC3339 timestamp formats are accepted"""
@@ -2232,7 +2236,7 @@ class TestGetWebSocketsTokenResponse:
 
         assert response.is_success is True
         assert response.success is not None
-        assert response.error is None
+        assert response.failure is None
         assert response.success.token == "1Dwc4lzSwNWOAwkMdqhssNNFhs1ed606d1WcF3XfEMw"
         assert response.success.expires == 900
 
@@ -2246,8 +2250,8 @@ class TestGetWebSocketsTokenResponse:
 
         assert response.is_success is False
         assert response.success is None
-        assert response.error is not None
-        assert "EGeneral:Permission denied" in response.error.error
+        assert response.failure is not None
+        assert "EGeneral:Permission denied" in response.failure.error
 
     def test_multiple_errors(self):
         """Test parsing response with multiple errors"""
@@ -2261,9 +2265,9 @@ class TestGetWebSocketsTokenResponse:
         response = GetWebSocketsTokenResponse.from_response(kraken_response)
 
         assert response.is_success is False
-        assert len(response.error.error) == 2
-        assert "EGeneral:Invalid arguments" in response.error.error
-        assert "EAPI:Invalid key" in response.error.error
+        assert len(response.failure.error) == 2
+        assert "EGeneral:Invalid arguments" in response.failure.error
+        assert "EAPI:Invalid key" in response.failure.error
 
     def test_from_json_string(self):
         """Test parsing from JSON string"""
@@ -2313,10 +2317,10 @@ class TestGetWebSocketsTokenResponse:
         assert response.success.token == "wrapperTest"
 
         error = ResponseErrorSchema(error=["Test error"])
-        response2 = GetWebSocketsTokenResponse(error=error)
+        response2 = GetWebSocketsTokenResponse(failure=error)
 
         assert response2.is_success is False
-        assert response2.error.error[0] == "Test error"
+        assert response2.failure.error[0] == "Test error"
 
     def test_token_format(self):
         """Test that token is string format"""
@@ -2781,8 +2785,8 @@ class TestAddOrderBatchResponse:
         response = AddOrderBatchResponse.from_response(kraken_response)
 
         assert response.is_success is False
-        assert response.error is not None
-        assert "EGeneral:Invalid arguments" in response.error.error
+        assert response.failure is not None
+        assert "EGeneral:Invalid arguments" in response.failure.error
 
     def test_error_response_parsing(self):
         """Test parsing batch-level error response"""
@@ -2791,7 +2795,7 @@ class TestAddOrderBatchResponse:
         response = AddOrderBatchResponse.from_response(kraken_response)
 
         assert response.is_success is False
-        assert "EOrder:Invalid pair" in response.error.error
+        assert "EOrder:Invalid pair" in response.failure.error
 
     def test_from_json_string(self):
         """Test parsing from JSON string"""
@@ -3125,7 +3129,7 @@ class TestCancelOrderBatchResponse:
         response = CancelOrderBatchResponse.from_response(kraken_response)
 
         assert response.is_success is False
-        assert "EOrder:Unknown order" in response.error.error
+        assert "EOrder:Unknown order" in response.failure.error
 
     def test_from_json_string(self):
         """Test parsing from JSON string"""

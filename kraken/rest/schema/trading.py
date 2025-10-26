@@ -1,12 +1,15 @@
 import json
-from datetime import datetime, timedelta
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import AliasChoices, Field, field_validator, model_validator
-from pydantic import BaseModel as BaseSchema
 
-from kraken.constants import LATENCY_TOLERANCE
-from kraken.utilities import utc_now
+from kraken.rest.schema import validators
+from kraken.rest.schema.base import (
+    BaseRequestSchema,
+    BaseResponseWrapper,
+    BaseSchema,
+    ResponseErrorSchema,
+)
 
 ORDER_TYPE = Literal[
     "market",
@@ -21,25 +24,43 @@ ORDER_TYPE = Literal[
     "settle-position",
 ]
 ORDER_DIRECTION = Literal["buy", "sell"]
-ORDER_FLAG_SET = set(["post", "fcib", "fciq", "viqc"])
 TRIGGER_TYPE = Literal["index", "last"]
 STP_TYPE = Literal["cancel-newest", "cancel-oldest", "cancel-both"]
 TIME_IN_FORCE = Literal["GTC", "IOC", "GTD", "PO"]
 
 
-class ResponseErrorSchema(BaseSchema):
-    """Error response from Kraken API.
+class OrderIdentifierMixin(BaseSchema):
+    """Mixin for schemas that identify orders by txid or cl_ord_id.
 
-    Contains error messages when order placement fails.
+    Provides common fields and validation for mutual exclusivity.
     """
 
-    error: list[str] = Field(
-        ...,
-        description="List of error messages from the API.",
+    txid: str | int | None = Field(
+        default=None,
+        description="Transaction ID (txid) or user reference (userref).",
+    )
+    cl_ord_id: str | None = Field(
+        default=None,
+        description="Client order identifier.",
     )
 
+    @field_validator("txid", mode="before")
+    @classmethod
+    def normalize_txid(cls, value: str | int | None) -> str | int | None:
+        """Normalize txid - convert string integers to int, keep string txids as strings."""
+        return validators.normalize_txid(value)
 
-class AddOrderRequest(BaseSchema):
+    @model_validator(mode="after")
+    def validate_identifier_mutual_exclusivity(self) -> "OrderIdentifierMixin":
+        """Validate that txid and cl_ord_id are mutually exclusive."""
+        if self.txid is None and self.cl_ord_id is None:
+            raise ValueError("Either 'txid' or 'cl_ord_id' must be provided")
+        if self.txid is not None and self.cl_ord_id is not None:
+            raise ValueError("'txid' and 'cl_ord_id' are mutually exclusive")
+        return self
+
+
+class AddOrderRequest(BaseRequestSchema):
     """Schema for Kraken AddOrder API request.
 
     This schema validates and prepares order data for submission to Kraken's
@@ -191,12 +212,12 @@ class AddOrderRequest(BaseSchema):
     @field_validator("ordertype", mode="before")
     @classmethod
     def lowercase_order(cls, value: str) -> str:
-        return value.lower().strip()
+        return validators.validate_ordertype(value)
 
     @field_validator("volume", mode="before")
     @classmethod
     def string_volume(cls, value: str | float | int) -> str:
-        return str(value)
+        return validators.validate_volume(value)
 
     @field_validator("displayvol", mode="before")
     @classmethod
@@ -204,41 +225,22 @@ class AddOrderRequest(BaseSchema):
         if value is None:
             return None
         order_volume = float(info.data.get("volume"))
-        floor_volume = order_volume / 15.0
-        if float(value) > order_volume:
-            return str(order_volume)
-        elif float(value) < floor_volume:
-            return str(floor_volume)
-        else:
-            return str(value)
+        return validators.validate_display_volume(value, order_volume)
 
     @field_validator("leverage", mode="before")
     @classmethod
-    def string_leverage(cls, value: str | float | None) -> str | None:
-        if value is None:
-            return None
-        return str(value)
+    def string_leverage(cls, value: str | int | None) -> str | None:
+        return validators.validate_leverage(value)
 
     @field_validator("oflags", mode="before")
     @classmethod
     def concat_order_flags(cls, value: str | list[str] | set[str] | None) -> str | None:
-        if value is None:
-            return None
-        if isinstance(value, str):
-            splits = value.split(",")
-            if len(splits) > 1:
-                value = set(splits)
-            else:
-                value = {value}
-        elif isinstance(value, list):
-            value = set(value)
-        value = ORDER_FLAG_SET.intersection(value)
-        return ",".join(value) if len(value) > 0 else None
+        return validators.validate_order_flags(value)
 
     @field_validator("timeinforce", mode="before")
     @classmethod
     def capitalize_time_in_force(cls, value: str) -> str:
-        return value.upper().strip()
+        return validators.validate_time_in_force(value)
 
     @field_validator("deadline", mode="after")
     @classmethod
@@ -249,27 +251,7 @@ class AddOrderRequest(BaseSchema):
         The REST client will generate the deadline at request signing time
         if None is provided, ensuring accurate timing for async operations.
         """
-        if value is None:
-            return None
-
-        deadline = datetime.fromisoformat(value)
-        if deadline.tzinfo is None:
-            raise ValueError(
-                "Deadline must include timezone information (RFC3339 format). "
-                "Example: '2025-01-15T12:00:00+00:00' or use 'Z' for UTC."
-            )
-
-        # Validate deadline is bounded between 2-60 seconds from now
-        now = utc_now()
-        min_t, max_t = now + timedelta(seconds=2), now + timedelta(seconds=60)
-        deadline_utc = deadline.astimezone(now.tzinfo)
-
-        if deadline_utc < min_t:
-            deadline_utc = min_t
-        elif deadline_utc > max_t:
-            deadline_utc = max_t
-
-        return deadline_utc.isoformat()
+        return validators.validate_deadline(value)
 
     @model_validator(mode="after")
     def validate_field_dependencies(self) -> "AddOrderRequest":
@@ -296,59 +278,6 @@ class AddOrderRequest(BaseSchema):
         if self.userref is not None and self.cl_ord_id is not None:
             raise ValueError("'userref' and 'cl_ord_id' are mutually exclusive")
         return self
-
-    def to_api_dict(self, **kwargs) -> dict[str, Any]:
-        """Serialize order to dict for Kraken API submission.
-
-        This method handles proper field aliasing and exclusion of None values
-        for API compatibility. Use this method when passing orders to the REST client.
-
-        Args:
-            exclude_none: If True, removes fields with None values from output.
-                         Default is True for Kraken API compatibility.
-
-        Returns:
-            Dictionary suitable for Kraken API AddOrder endpoint
-
-        Example:
-            >>> order = AddOrderRequest(
-            ...     ordertype="limit",
-            ...     type="buy",
-            ...     volume=1.5,
-            ...     pair="XBTUSD",
-            ...     price="50000"
-            ... )
-            >>> data = order.to_api_dict()
-            >>> # Pass to REST client
-            >>> response = client.request("AddOrder", data=data)
-        """
-        return self.model_dump(
-            by_alias=kwargs.pop("by_alias", True),
-            exclude_none=kwargs.pop("exclude_none", True),
-            **kwargs,
-        )
-
-    @staticmethod
-    def compute_deadline(latency_tolerance: int = LATENCY_TOLERANCE) -> str:
-        """Compute a deadline timestamp for order submission.
-
-        This is a utility method that should be called by the REST client
-        at request signing time, not during order instantiation.
-
-        Args:
-            latency_tolerance: Seconds to add to current time for deadline
-
-        Returns:
-            RFC3339 formatted deadline string
-        """
-        now = utc_now()
-        deadline = now + timedelta(seconds=latency_tolerance)
-        min_t, max_t = now + timedelta(seconds=2), now + timedelta(seconds=60)
-        if deadline < min_t:
-            deadline = min_t
-        elif deadline > max_t:
-            deadline = max_t
-        return deadline.isoformat()
 
 
 class AddOrderSuccess(BaseSchema):
@@ -378,27 +307,13 @@ class AddOrderSuccess(BaseSchema):
         return self.descr.get("close")
 
 
-class AddOrderResponse(BaseSchema):
+class AddOrderResponse(BaseResponseWrapper[AddOrderSuccess]):
     """Combined response wrapper for AddOrder API calls.
 
     This wrapper handles both success and error cases from the Kraken API.
     Use the `is_success` property to determine the outcome and access the
     appropriate `success` or `error` attribute.
     """
-
-    success: AddOrderSuccess | None = Field(
-        default=None,
-        description="Success response data, present when order placement succeeds.",
-    )
-    error: ResponseErrorSchema | None = Field(
-        default=None,
-        description="Error response data, present when order placement fails.",
-    )
-
-    @property
-    def is_success(self) -> bool:
-        """Check if the response indicates success."""
-        return self.success is not None
 
     @classmethod
     def from_response(cls, response: dict | str) -> "AddOrderResponse":
@@ -418,7 +333,7 @@ class AddOrderResponse(BaseSchema):
         errors = response.get("error", [])
         if errors:
             error_data = ResponseErrorSchema(error=errors)
-            return cls(error=error_data)
+            return cls(failure=error_data)
 
         result = response.get("result")
         if not result:
@@ -430,7 +345,7 @@ class AddOrderResponse(BaseSchema):
         return cls(success=success_data)
 
 
-class AmendOrderRequest(BaseSchema):
+class AmendOrderRequest(BaseRequestSchema):
     """Schema for Kraken AmendOrder API request.
 
     This schema validates and prepares order amendment data for submission to
@@ -532,23 +447,16 @@ class AmendOrderRequest(BaseSchema):
     @field_validator("order_qty", mode="before")
     @classmethod
     def string_order_qty(cls, value: str | float | int | None) -> str | None:
-        if value is None:
-            return None
-        return str(value)
+        return validators.validate_volume(value) if value is not None else None
 
     @field_validator("display_qty", mode="before")
     @classmethod
     def floor_display_qty(cls, value: str | float | int | None, info) -> str | None:
         if value is None:
             return None
-        order_qty = info.data.get("order_qty")  # If order_qty is provided, use it for floor calc
+        order_qty = info.data.get("order_qty")
         if order_qty is not None:
-            order_volume = float(order_qty)
-            floor_volume = order_volume / 15.0
-            if float(value) > order_volume:
-                return str(order_volume)
-            elif float(value) < floor_volume:
-                return str(floor_volume)
+            return validators.validate_display_volume(value, float(order_qty))
         return str(value)
 
     @field_validator("deadline", mode="after")
@@ -560,22 +468,7 @@ class AmendOrderRequest(BaseSchema):
         The REST client will generate the deadline at request signing time
         if None is provided, ensuring accurate timing for async operations.
         """
-        if value is None:
-            return None
-        deadline = datetime.fromisoformat(value)
-        if deadline.tzinfo is None:
-            raise ValueError(
-                "Deadline must include timezone information (RFC3339 format). "
-                "Example: '2025-01-15T12:00:00+00:00' or use 'Z' for UTC."
-            )
-        now = utc_now()
-        min_t, max_t = now + timedelta(seconds=2), now + timedelta(seconds=60)
-        deadline_utc = deadline.astimezone(now.tzinfo)
-        if deadline_utc < min_t:
-            deadline_utc = min_t
-        elif deadline_utc > max_t:
-            deadline_utc = max_t
-        return deadline_utc.isoformat()
+        return validators.validate_deadline(value)
 
     @model_validator(mode="after")
     def validate_field_dependencies(self) -> "AmendOrderRequest":
@@ -585,58 +478,6 @@ class AmendOrderRequest(BaseSchema):
         if self.txid is not None and self.cl_ord_id is not None:
             raise ValueError("'txid' and 'cl_ord_id' are mutually exclusive")
         return self
-
-    def to_api_dict(self, **kwargs) -> dict[str, Any]:
-        """Serialize amend request to dict for Kraken API submission.
-
-        This method handles proper field aliasing and exclusion of None values
-        for API compatibility. Use this method when passing amend requests to
-        the REST client.
-
-        Args:
-            exclude_none: If True, removes fields with None values from output.
-                         Default is True for Kraken API compatibility.
-
-        Returns:
-            Dictionary suitable for Kraken API AmendOrder endpoint
-
-        Example:
-            >>> amend = AmendOrderRequest(
-            ...     txid="OUF4EM-FRGI2-MQMWZD",
-            ...     order_qty=2.5,
-            ...     limit_price="51000"
-            ... )
-            >>> data = amend.to_api_dict()
-            >>> # Pass to REST client
-            >>> response = client.request("AmendOrder", data=data)
-        """
-        return self.model_dump(
-            by_alias=kwargs.pop("by_alias", True),
-            exclude_none=kwargs.pop("exclude_none", True),
-            **kwargs,
-        )
-
-    @staticmethod
-    def compute_deadline(latency_tolerance: int = LATENCY_TOLERANCE) -> str:
-        """Compute a deadline timestamp for amend request submission.
-
-        This is a utility method that should be called by the REST client
-        at request signing time, not during amend instantiation.
-
-        Args:
-            latency_tolerance: Seconds to add to current time for deadline
-
-        Returns:
-            RFC3339 formatted deadline string
-        """
-        now = utc_now()
-        deadline = now + timedelta(seconds=latency_tolerance)
-        min_t, max_t = now + timedelta(seconds=2), now + timedelta(seconds=60)
-        if deadline < min_t:
-            deadline = min_t
-        elif deadline > max_t:
-            deadline = max_t
-        return deadline.isoformat()
 
 
 class AmendOrderSuccess(BaseSchema):
@@ -652,27 +493,13 @@ class AmendOrderSuccess(BaseSchema):
     )
 
 
-class AmendOrderResponse(BaseSchema):
+class AmendOrderResponse(BaseResponseWrapper[AmendOrderSuccess]):
     """Combined response wrapper for AmendOrder API calls.
 
     This wrapper handles both success and error cases from the Kraken API.
     Use the `is_success` property to determine the outcome and access the
     appropriate `success` or `error` attribute.
     """
-
-    success: AmendOrderSuccess | None = Field(
-        default=None,
-        description="Success response data, present when order amendment succeeds.",
-    )
-    error: ResponseErrorSchema | None = Field(
-        default=None,
-        description="Error response data, present when order amendment fails.",
-    )
-
-    @property
-    def is_success(self) -> bool:
-        """Check if the response indicates success."""
-        return self.success is not None
 
     @classmethod
     def from_response(cls, response: dict | str) -> "AmendOrderResponse":
@@ -692,7 +519,7 @@ class AmendOrderResponse(BaseSchema):
         errors = response.get("error", [])
         if errors:
             error_data = ResponseErrorSchema(error=errors)
-            return cls(error=error_data)
+            return cls(failure=error_data)
 
         result = response.get("result")
         if not result:
@@ -701,7 +528,7 @@ class AmendOrderResponse(BaseSchema):
         return cls(success=success_data)
 
 
-class CancelOrderRequest(BaseSchema):
+class CancelOrderRequest(BaseRequestSchema, OrderIdentifierMixin):
     """Schema for Kraken CancelOrder API request.
 
     This schema validates and prepares order cancellation data for submission to
@@ -742,64 +569,7 @@ class CancelOrderRequest(BaseSchema):
         >>> response = await client.arequest("CancelOrder", data=cancel.to_api_dict())
     """
 
-    txid: str | int | None = Field(
-        default=None,
-        description="Kraken order identifier (txid) or user reference (userref). Can be a string (txid), integer (userref), or string representation of either.",
-    )
-    cl_ord_id: str | None = Field(
-        default=None,
-        description="An alphanumeric client order identifier which uniquely identifies an open order for each client.",
-    )
-
-    @field_validator("txid", mode="before")
-    @classmethod
-    def normalize_txid(cls, value: str | int | None) -> str | int | None:
-        """Normalize txid - convert string integers to int, keep string txids as strings."""
-        if value is None:
-            return None
-        if isinstance(value, int):
-            return value
-        if isinstance(value, str):
-            try:
-                return int(value)
-            except ValueError:
-                return value.strip()
-        return value
-
-    @model_validator(mode="after")
-    def validate_field_dependencies(self) -> "CancelOrderRequest":
-        """Validate field dependencies for cancel requests."""
-        if self.txid is None and self.cl_ord_id is None:
-            raise ValueError("Either 'txid' or 'cl_ord_id' must be provided")
-        if self.txid is not None and self.cl_ord_id is not None:
-            raise ValueError("'txid' and 'cl_ord_id' are mutually exclusive")
-        return self
-
-    def to_api_dict(self, **kwargs) -> dict[str, Any]:
-        """Serialize cancel request to dict for Kraken API submission.
-
-        This method handles proper field aliasing and exclusion of None values
-        for API compatibility. Use this method when passing cancel requests to
-        the REST client.
-
-        Args:
-            exclude_none: If True, removes fields with None values from output.
-                         Default is True for Kraken API compatibility.
-
-        Returns:
-            Dictionary suitable for Kraken API CancelOrder endpoint
-
-        Example:
-            >>> cancel = CancelOrderRequest(txid="OUF4EM-FRGI2-MQMWZD")
-            >>> data = cancel.to_api_dict()
-            >>> # Pass to REST client
-            >>> response = client.request("CancelOrder", data=data)
-        """
-        return self.model_dump(
-            by_alias=kwargs.pop("by_alias", True),
-            exclude_none=kwargs.pop("exclude_none", True),
-            **kwargs,
-        )
+    pass
 
 
 class CancelOrderSuccess(BaseSchema):
@@ -819,27 +589,13 @@ class CancelOrderSuccess(BaseSchema):
     )
 
 
-class CancelOrderResponse(BaseSchema):
+class CancelOrderResponse(BaseResponseWrapper[CancelOrderSuccess]):
     """Combined response wrapper for CancelOrder API calls.
 
     This wrapper handles both success and error cases from the Kraken API.
     Use the `is_success` property to determine the outcome and access the
     appropriate `success` or `error` attribute.
     """
-
-    success: CancelOrderSuccess | None = Field(
-        default=None,
-        description="Success response data, present when order cancellation succeeds.",
-    )
-    error: ResponseErrorSchema | None = Field(
-        default=None,
-        description="Error response data, present when order cancellation fails.",
-    )
-
-    @property
-    def is_success(self) -> bool:
-        """Check if the response indicates success."""
-        return self.success is not None
 
     @classmethod
     def from_response(cls, response: dict | str) -> "CancelOrderResponse":
@@ -859,7 +615,7 @@ class CancelOrderResponse(BaseSchema):
         errors = response.get("error", [])
         if errors:
             error_data = ResponseErrorSchema(error=errors)
-            return cls(error=error_data)
+            return cls(failure=error_data)
 
         result = response.get("result")
         if not result:
@@ -871,7 +627,7 @@ class CancelOrderResponse(BaseSchema):
         return cls(success=success_data)
 
 
-class CancelAllRequest(BaseSchema):
+class CancelAllRequest(BaseRequestSchema):
     """Schema for Kraken CancelAll API request.
 
     This schema validates and prepares data for submission to Kraken's
@@ -900,31 +656,7 @@ class CancelAllRequest(BaseSchema):
         >>> response = await client.arequest("CancelAll", data=cancel_all.to_api_dict())
     """
 
-    def to_api_dict(self, **kwargs) -> dict[str, Any]:
-        """Serialize cancel all request to dict for Kraken API submission.
-
-        This method handles proper field aliasing and exclusion of None values
-        for API compatibility. Use this method when passing cancel all requests
-        to the REST client.
-
-        Args:
-            exclude_none: If True, removes fields with None values from output.
-                         Default is True for Kraken API compatibility.
-
-        Returns:
-            Dictionary suitable for Kraken API CancelAll endpoint
-
-        Example:
-            >>> cancel_all = CancelAllRequest()
-            >>> data = cancel_all.to_api_dict()
-            >>> # Pass to REST client
-            >>> response = client.request("CancelAll", data=data)
-        """
-        return self.model_dump(
-            by_alias=kwargs.pop("by_alias", True),
-            exclude_none=kwargs.pop("exclude_none", True),
-            **kwargs,
-        )
+    pass
 
 
 class CancelAllSuccess(BaseSchema):
@@ -944,27 +676,13 @@ class CancelAllSuccess(BaseSchema):
     )
 
 
-class CancelAllResponse(BaseSchema):
+class CancelAllResponse(BaseResponseWrapper[CancelAllSuccess]):
     """Combined response wrapper for CancelAll API calls.
 
     This wrapper handles both success and error cases from the Kraken API.
     Use the `is_success` property to determine the outcome and access the
     appropriate `success` or `error` attribute.
     """
-
-    success: CancelAllSuccess | None = Field(
-        default=None,
-        description="Success response data, present when order cancellation succeeds.",
-    )
-    error: ResponseErrorSchema | None = Field(
-        default=None,
-        description="Error response data, present when order cancellation fails.",
-    )
-
-    @property
-    def is_success(self) -> bool:
-        """Check if the response indicates success."""
-        return self.success is not None
 
     @classmethod
     def from_response(cls, response: dict | str) -> "CancelAllResponse":
@@ -984,7 +702,7 @@ class CancelAllResponse(BaseSchema):
         errors = response.get("error", [])
         if errors:
             error_data = ResponseErrorSchema(error=errors)
-            return cls(error=error_data)
+            return cls(failure=error_data)
 
         result = response.get("result")
         if not result:
@@ -996,7 +714,7 @@ class CancelAllResponse(BaseSchema):
         return cls(success=success_data)
 
 
-class CancelAllOrdersAfterRequest(BaseSchema):
+class CancelAllOrdersAfterRequest(BaseRequestSchema):
     """Schema for Kraken CancelAllOrdersAfter API request.
 
     This schema validates and prepares data for submission to Kraken's
@@ -1050,38 +768,7 @@ class CancelAllOrdersAfterRequest(BaseSchema):
         Raises:
             ValueError: If timeout is outside allowed range
         """
-        timeout = int(value)
-        if timeout < 0 or timeout > 86400:
-            raise ValueError(
-                f"Timeout must be between 0 and 86400 seconds (24 hours), got {timeout}"
-            )
-        return timeout
-
-    def to_api_dict(self, **kwargs) -> dict[str, Any]:
-        """Serialize cancel all orders after request to dict for Kraken API submission.
-
-        This method handles proper field aliasing and exclusion of None values
-        for API compatibility. Use this method when passing cancel all orders
-        after requests to the REST client.
-
-        Args:
-            exclude_none: If True, removes fields with None values from output.
-                         Default is True for Kraken API compatibility.
-
-        Returns:
-            Dictionary suitable for Kraken API CancelAllOrdersAfter endpoint
-
-        Example:
-            >>> cancel_after = CancelAllOrdersAfterRequest(timeout=60)
-            >>> data = cancel_after.to_api_dict()
-            >>> # Pass to REST client
-            >>> response = client.request("CancelAllOrdersAfter", data=data)
-        """
-        return self.model_dump(
-            by_alias=kwargs.pop("by_alias", True),
-            exclude_none=kwargs.pop("exclude_none", True),
-            **kwargs,
-        )
+        return validators.validate_timeout(value)
 
 
 class CancelAllOrdersAfterSuccess(BaseSchema):
@@ -1104,27 +791,13 @@ class CancelAllOrdersAfterSuccess(BaseSchema):
     )
 
 
-class CancelAllOrdersAfterResponse(BaseSchema):
+class CancelAllOrdersAfterResponse(BaseResponseWrapper[CancelAllOrdersAfterSuccess]):
     """Combined response wrapper for CancelAllOrdersAfter API calls.
 
     This wrapper handles both success and error cases from the Kraken API.
     Use the `is_success` property to determine the outcome and access the
     appropriate `success` or `error` attribute.
     """
-
-    success: CancelAllOrdersAfterSuccess | None = Field(
-        default=None,
-        description="Success response data, present when dead man's switch is set/reset successfully.",
-    )
-    error: ResponseErrorSchema | None = Field(
-        default=None,
-        description="Error response data, present when request fails.",
-    )
-
-    @property
-    def is_success(self) -> bool:
-        """Check if the response indicates success."""
-        return self.success is not None
 
     @classmethod
     def from_response(cls, response: dict | str) -> "CancelAllOrdersAfterResponse":
@@ -1144,7 +817,7 @@ class CancelAllOrdersAfterResponse(BaseSchema):
         errors = response.get("error", [])
         if errors:
             error_data = ResponseErrorSchema(error=errors)
-            return cls(error=error_data)
+            return cls(failure=error_data)
 
         result = response.get("result")
         if not result:
@@ -1156,7 +829,7 @@ class CancelAllOrdersAfterResponse(BaseSchema):
         return cls(success=success_data)
 
 
-class GetWebSocketsTokenRequest(BaseSchema):
+class GetWebSocketsTokenRequest(BaseRequestSchema):
     """Schema for Kraken GetWebSocketsToken API request.
 
     This schema validates and prepares data for submission to Kraken's
@@ -1190,31 +863,7 @@ class GetWebSocketsTokenRequest(BaseSchema):
         >>> response = await client.arequest("GetWebSocketsToken", data=ws_token_request.to_api_dict())
     """
 
-    def to_api_dict(self, **kwargs) -> dict[str, Any]:
-        """Serialize request to dict for Kraken API submission.
-
-        This method handles proper field aliasing and exclusion of None values
-        for API compatibility. Use this method when passing requests to the
-        REST client.
-
-        Args:
-            exclude_none: If True, removes fields with None values from output.
-                         Default is True for Kraken API compatibility.
-
-        Returns:
-            Dictionary suitable for Kraken API GetWebSocketsToken endpoint
-
-        Example:
-            >>> ws_token_request = GetWebSocketsTokenRequest()
-            >>> data = ws_token_request.to_api_dict()
-            >>> # Pass to REST client
-            >>> response = client.request("GetWebSocketsToken", data=data)
-        """
-        return self.model_dump(
-            by_alias=kwargs.pop("by_alias", True),
-            exclude_none=kwargs.pop("exclude_none", True),
-            **kwargs,
-        )
+    pass
 
 
 class GetWebSocketsTokenSuccess(BaseSchema):
@@ -1233,27 +882,13 @@ class GetWebSocketsTokenSuccess(BaseSchema):
     )
 
 
-class GetWebSocketsTokenResponse(BaseSchema):
+class GetWebSocketsTokenResponse(BaseResponseWrapper[GetWebSocketsTokenSuccess]):
     """Combined response wrapper for GetWebSocketsToken API calls.
 
     This wrapper handles both success and error cases from the Kraken API.
     Use the `is_success` property to determine the outcome and access the
     appropriate `success` or `error` attribute.
     """
-
-    success: GetWebSocketsTokenSuccess | None = Field(
-        default=None,
-        description="Success response data, present when token generation succeeds.",
-    )
-    error: ResponseErrorSchema | None = Field(
-        default=None,
-        description="Error response data, present when request fails.",
-    )
-
-    @property
-    def is_success(self) -> bool:
-        """Check if the response indicates success."""
-        return self.success is not None
 
     @classmethod
     def from_response(cls, response: dict | str) -> "GetWebSocketsTokenResponse":
@@ -1273,7 +908,7 @@ class GetWebSocketsTokenResponse(BaseSchema):
         errors = response.get("error", [])
         if errors:
             error_data = ResponseErrorSchema(error=errors)
-            return cls(error=error_data)
+            return cls(failure=error_data)
 
         result = response.get("result")
         if not result:
@@ -1366,12 +1001,12 @@ class BatchOrderItem(BaseSchema):
     @field_validator("ordertype", mode="before")
     @classmethod
     def lowercase_order(cls, value: str) -> str:
-        return value.lower().strip()
+        return validators.validate_ordertype(value)
 
     @field_validator("volume", mode="before")
     @classmethod
     def string_volume(cls, value: str | float | int) -> str:
-        return str(value)
+        return validators.validate_volume(value)
 
     @field_validator("displayvol", mode="before")
     @classmethod
@@ -1379,41 +1014,22 @@ class BatchOrderItem(BaseSchema):
         if value is None:
             return None
         order_volume = float(info.data.get("volume"))
-        floor_volume = order_volume / 15.0
-        if float(value) > order_volume:
-            return str(order_volume)
-        elif float(value) < floor_volume:
-            return str(floor_volume)
-        else:
-            return str(value)
+        return validators.validate_display_volume(value, order_volume)
 
     @field_validator("leverage", mode="before")
     @classmethod
-    def string_leverage(cls, value: str | float | None) -> str | None:
-        if value is None:
-            return None
-        return str(value)
+    def string_leverage(cls, value: str | int | None) -> str | None:
+        return validators.validate_leverage(value)
 
     @field_validator("oflags", mode="before")
     @classmethod
     def concat_order_flags(cls, value: str | list[str] | set[str] | None) -> str | None:
-        if value is None:
-            return None
-        if isinstance(value, str):
-            splits = value.split(",")
-            if len(splits) > 1:
-                value = set(splits)
-            else:
-                value = {value}
-        elif isinstance(value, list):
-            value = set(value)
-        value = ORDER_FLAG_SET.intersection(value)
-        return ",".join(value) if len(value) > 0 else None
+        return validators.validate_order_flags(value)
 
     @field_validator("timeinforce", mode="before")
     @classmethod
     def capitalize_time_in_force(cls, value: str) -> str:
-        return value.upper().strip()
+        return validators.validate_time_in_force(value)
 
     @model_validator(mode="after")
     def validate_field_dependencies(self) -> "BatchOrderItem":
@@ -1435,7 +1051,7 @@ class BatchOrderItem(BaseSchema):
         return self
 
 
-class AddOrderBatchRequest(BaseSchema):
+class AddOrderBatchRequest(BaseRequestSchema):
     """Schema for Kraken AddOrderBatch API request.
 
     This schema validates and prepares batch order data for submission to Kraken's
@@ -1522,52 +1138,7 @@ class AddOrderBatchRequest(BaseSchema):
     @classmethod
     def validate_deadline(cls, value: str | None) -> str | None:
         """Validate deadline format and timezone information."""
-        if value is None:
-            return None
-
-        deadline = datetime.fromisoformat(value)
-        if deadline.tzinfo is None:
-            raise ValueError(
-                "Deadline must include timezone information (RFC3339 format). "
-                "Example: '2025-01-15T12:00:00+00:00' or use 'Z' for UTC."
-            )
-
-        # Validate deadline is bounded between 2-60 seconds from now
-        now = utc_now()
-        min_t, max_t = now + timedelta(seconds=2), now + timedelta(seconds=60)
-        deadline_utc = deadline.astimezone(now.tzinfo)
-
-        if deadline_utc < min_t:
-            deadline_utc = min_t
-        elif deadline_utc > max_t:
-            deadline_utc = max_t
-
-        return deadline_utc.isoformat()
-
-    def to_api_dict(self, **kwargs) -> dict[str, Any]:
-        """Serialize batch request to dict for Kraken API submission.
-
-        This method handles proper field aliasing and exclusion of None values
-        for API compatibility. Use this method when passing batch requests to
-        the REST client.
-
-        Args:
-            exclude_none: If True, removes fields with None values from output.
-                         Default is True for Kraken API compatibility.
-
-        Returns:
-            Dictionary suitable for Kraken API AddOrderBatch endpoint
-
-        Example:
-            >>> batch = AddOrderBatchRequest(orders=[...], pair="XBTUSD")
-            >>> data = batch.to_api_dict()
-            >>> response = client.request("AddOrderBatch", data=data)
-        """
-        return self.model_dump(
-            by_alias=kwargs.pop("by_alias", True),
-            exclude_none=kwargs.pop("exclude_none", True),
-            **kwargs,
-        )
+        return validators.validate_deadline(value)
 
 
 class BatchOrderResult(BaseSchema):
@@ -1608,7 +1179,7 @@ class AddOrderBatchSuccess(BaseSchema):
     )
 
 
-class AddOrderBatchResponse(BaseSchema):
+class AddOrderBatchResponse(BaseResponseWrapper[AddOrderBatchSuccess]):
     """Combined response wrapper for AddOrderBatch API calls.
 
     This wrapper handles both success and error cases from the Kraken API.
@@ -1618,20 +1189,6 @@ class AddOrderBatchResponse(BaseSchema):
     Note: Even in success cases, individual orders may have errors. Check
     each BatchOrderResult for individual order outcomes.
     """
-
-    success: AddOrderBatchSuccess | None = Field(
-        default=None,
-        description="Success response data, present when batch submission succeeds.",
-    )
-    error: ResponseErrorSchema | None = Field(
-        default=None,
-        description="Error response data, present when batch validation fails.",
-    )
-
-    @property
-    def is_success(self) -> bool:
-        """Check if the batch response indicates success."""
-        return self.success is not None
 
     @classmethod
     def from_response(cls, response: dict | str) -> "AddOrderBatchResponse":
@@ -1651,7 +1208,7 @@ class AddOrderBatchResponse(BaseSchema):
         errors = response.get("error", [])
         if errors:
             error_data = ResponseErrorSchema(error=errors)
-            return cls(error=error_data)
+            return cls(failure=error_data)
 
         result = response.get("result")
         if not result:
@@ -1671,48 +1228,17 @@ class AddOrderBatchResponse(BaseSchema):
         return cls(success=success_data)
 
 
-class CancelOrderBatchItem(BaseSchema):
+class CancelOrderBatchItem(OrderIdentifierMixin):
     """Schema for individual order identifier in a CancelOrderBatch request.
 
     Represents a single order to cancel by either transaction ID (txid),
     user reference (userref), or client order ID (cl_ord_id).
     """
 
-    txid: str | int | None = Field(
-        default=None,
-        description="Transaction ID (txid) or user reference (userref).",
-    )
-    cl_ord_id: str | None = Field(
-        default=None,
-        description="Client order identifier.",
-    )
-
-    @field_validator("txid", mode="before")
-    @classmethod
-    def normalize_txid(cls, value: str | int | None) -> str | int | None:
-        """Normalize txid - convert string integers to int, keep string txids as strings."""
-        if value is None:
-            return None
-        if isinstance(value, int):
-            return value
-        if isinstance(value, str):
-            try:
-                return int(value)
-            except ValueError:
-                return value.strip()
-        return value
-
-    @model_validator(mode="after")
-    def validate_field_dependencies(self) -> "CancelOrderBatchItem":
-        """Validate that at least one identifier is provided."""
-        if self.txid is None and self.cl_ord_id is None:
-            raise ValueError("Either 'txid' or 'cl_ord_id' must be provided")
-        if self.txid is not None and self.cl_ord_id is not None:
-            raise ValueError("'txid' and 'cl_ord_id' are mutually exclusive")
-        return self
+    pass
 
 
-class CancelOrderBatchRequest(BaseSchema):
+class CancelOrderBatchRequest(BaseRequestSchema):
     """Schema for Kraken CancelOrderBatch API request.
 
     This schema validates and prepares batch cancellation data for submission to
@@ -1787,31 +1313,6 @@ class CancelOrderBatchRequest(BaseSchema):
 
         return self
 
-    def to_api_dict(self, **kwargs) -> dict[str, Any]:
-        """Serialize cancel batch request to dict for Kraken API submission.
-
-        This method handles proper field aliasing and exclusion of None values
-        for API compatibility. Use this method when passing batch requests to
-        the REST client.
-
-        Args:
-            exclude_none: If True, removes fields with None values from output.
-                         Default is True for Kraken API compatibility.
-
-        Returns:
-            Dictionary suitable for Kraken API CancelOrderBatch endpoint
-
-        Example:
-            >>> batch = CancelOrderBatchRequest(orders=[...])
-            >>> data = batch.to_api_dict()
-            >>> response = client.request("CancelOrderBatch", data=data)
-        """
-        return self.model_dump(
-            by_alias=kwargs.pop("by_alias", True),
-            exclude_none=kwargs.pop("exclude_none", True),
-            **kwargs,
-        )
-
 
 class CancelOrderBatchSuccess(BaseSchema):
     """Successful CancelOrderBatch response from Kraken API.
@@ -1825,27 +1326,13 @@ class CancelOrderBatchSuccess(BaseSchema):
     )
 
 
-class CancelOrderBatchResponse(BaseSchema):
+class CancelOrderBatchResponse(BaseResponseWrapper[CancelOrderBatchSuccess]):
     """Combined response wrapper for CancelOrderBatch API calls.
 
     This wrapper handles both success and error cases from the Kraken API.
     Use the `is_success` property to determine the outcome and access the
     appropriate `success` or `error` attribute.
     """
-
-    success: CancelOrderBatchSuccess | None = Field(
-        default=None,
-        description="Success response data, present when batch cancellation succeeds.",
-    )
-    error: ResponseErrorSchema | None = Field(
-        default=None,
-        description="Error response data, present when batch cancellation fails.",
-    )
-
-    @property
-    def is_success(self) -> bool:
-        """Check if the response indicates success."""
-        return self.success is not None
 
     @classmethod
     def from_response(cls, response: dict | str) -> "CancelOrderBatchResponse":
@@ -1865,7 +1352,7 @@ class CancelOrderBatchResponse(BaseSchema):
         errors = response.get("error", [])
         if errors:
             error_data = ResponseErrorSchema(error=errors)
-            return cls(error=error_data)
+            return cls(failure=error_data)
 
         result = response.get("result")
         if not result:
