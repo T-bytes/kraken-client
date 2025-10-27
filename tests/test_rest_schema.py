@@ -10,6 +10,9 @@ from kraken.rest.schema.market import (
     GetServerTimeRequest,
     GetServerTimeResponse,
     GetServerTimeSuccess,
+    GetSystemStatusRequest,
+    GetSystemStatusResponse,
+    GetSystemStatusSuccess,
 )
 from kraken.rest.schema.trading import (
     AddOrderBatchRequest,
@@ -3533,3 +3536,374 @@ class TestGetServerTimeResponse:
         assert response.is_success is True
         assert response.success.unixtime == 2147483647
         assert response.success.rfc1123 == "Tue, 19 Jan 2038 03:14:07 GMT"
+
+
+class TestGetSystemStatusRequest:
+    """Tests for GetSystemStatusRequest schema"""
+
+    def test_minimal_valid_request(self):
+        """Test creating a minimal valid request"""
+        system_status_request = GetSystemStatusRequest()
+
+        # Should be valid with no required fields
+        assert system_status_request is not None
+
+    def test_no_nonce_field(self):
+        """Test that nonce is not present in schema (handled by REST client)"""
+        system_status_request = GetSystemStatusRequest()
+
+        # Should not have a nonce attribute
+        assert not hasattr(system_status_request, "nonce")
+
+    def test_to_api_dict_method(self):
+        """Test to_api_dict() serialization helper method"""
+        system_status_request = GetSystemStatusRequest()
+
+        # to_api_dict() should use by_alias=True and exclude_none=True
+        data = system_status_request.to_api_dict()
+
+        # Should return an empty dict (no fields)
+        assert data == {}
+
+        # Test exclude_none=False
+        data_with_none = system_status_request.to_api_dict(exclude_none=False)
+        assert data_with_none == {}
+
+    def test_multiple_instances(self):
+        """Test creating multiple GetSystemStatusRequest instances"""
+        requests = [GetSystemStatusRequest() for _ in range(10)]
+
+        # All should be valid
+        assert len(requests) == 10
+        for req in requests:
+            assert req is not None
+
+    def test_concurrent_creation(self):
+        """Test concurrent creation of multiple requests"""
+        import concurrent.futures
+
+        def create_request(i):
+            return GetSystemStatusRequest()
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            requests = list(executor.map(create_request, range(20)))
+
+        assert len(requests) == 20
+        for req in requests:
+            assert req is not None
+
+
+class TestGetSystemStatusResponse:
+    """Tests for GetSystemStatus response schemas"""
+
+    def test_success_response_parsing_online(self):
+        """Test parsing a successful response with 'online' status"""
+        kraken_response = {
+            "error": [],
+            "result": {
+                "status": "online",
+                "timestamp": "2021-03-22T17:18:03Z",
+            },
+        }
+
+        response = GetSystemStatusResponse.from_response(kraken_response)
+
+        assert response.is_success is True
+        assert response.success is not None
+        assert response.failure is None
+        assert response.success.status == "online"
+        assert response.success.timestamp == "2021-03-22T17:18:03Z"
+
+    def test_success_response_parsing_maintenance(self):
+        """Test parsing a successful response with 'maintenance' status"""
+        kraken_response = {
+            "error": [],
+            "result": {
+                "status": "maintenance",
+                "timestamp": "2023-10-15T12:00:00Z",
+            },
+        }
+
+        response = GetSystemStatusResponse.from_response(kraken_response)
+
+        assert response.is_success is True
+        assert response.success.status == "maintenance"
+        assert response.success.timestamp == "2023-10-15T12:00:00Z"
+
+    def test_success_response_parsing_cancel_only(self):
+        """Test parsing a successful response with 'cancel_only' status"""
+        kraken_response = {
+            "error": [],
+            "result": {
+                "status": "cancel_only",
+                "timestamp": "2024-01-01T00:00:00Z",
+            },
+        }
+
+        response = GetSystemStatusResponse.from_response(kraken_response)
+
+        assert response.is_success is True
+        assert response.success.status == "cancel_only"
+        assert response.success.timestamp == "2024-01-01T00:00:00Z"
+
+    def test_success_response_parsing_post_only(self):
+        """Test parsing a successful response with 'post_only' status"""
+        kraken_response = {
+            "error": [],
+            "result": {
+                "status": "post_only",
+                "timestamp": "2024-06-15T18:30:45Z",
+            },
+        }
+
+        response = GetSystemStatusResponse.from_response(kraken_response)
+
+        assert response.is_success is True
+        assert response.success.status == "post_only"
+        assert response.success.timestamp == "2024-06-15T18:30:45Z"
+
+    def test_invalid_status_validation(self):
+        """Test that invalid status values are rejected"""
+        with pytest.raises(ValidationError) as exc_info:
+            GetSystemStatusSuccess(
+                status="invalid_status",
+                timestamp="2021-03-22T17:18:03Z",
+            )
+
+        # Should contain validation error about status literal
+        assert "status" in str(exc_info.value).lower()
+
+    def test_various_timestamp_formats(self):
+        """Test parsing responses with various ISO 8601 timestamp formats"""
+        # Standard format
+        kraken_response1 = {
+            "error": [],
+            "result": {
+                "status": "online",
+                "timestamp": "2025-01-15T10:30:00Z",
+            },
+        }
+
+        response1 = GetSystemStatusResponse.from_response(kraken_response1)
+        assert response1.is_success is True
+        assert response1.success.timestamp == "2025-01-15T10:30:00Z"
+
+        # With milliseconds
+        kraken_response2 = {
+            "error": [],
+            "result": {
+                "status": "online",
+                "timestamp": "2025-01-15T10:30:00.123Z",
+            },
+        }
+
+        response2 = GetSystemStatusResponse.from_response(kraken_response2)
+        assert response2.is_success is True
+        assert response2.success.timestamp == "2025-01-15T10:30:00.123Z"
+
+    def test_error_response_parsing(self):
+        """Test parsing an error response"""
+        kraken_response = {
+            "error": ["EGeneral:Internal error"],
+        }
+
+        response = GetSystemStatusResponse.from_response(kraken_response)
+
+        assert response.is_success is False
+        assert response.success is None
+        assert response.failure is not None
+        assert "EGeneral:Internal error" in response.failure.error
+
+    def test_multiple_errors(self):
+        """Test parsing response with multiple errors"""
+        kraken_response = {
+            "error": [
+                "EGeneral:Internal error",
+                "EAPI:Rate limit exceeded",
+            ],
+        }
+
+        response = GetSystemStatusResponse.from_response(kraken_response)
+
+        assert response.is_success is False
+        assert len(response.failure.error) == 2
+        assert "EGeneral:Internal error" in response.failure.error
+        assert "EAPI:Rate limit exceeded" in response.failure.error
+
+    def test_from_json_string(self):
+        """Test parsing from JSON string"""
+        json_response = json.dumps(
+            {
+                "error": [],
+                "result": {
+                    "status": "online",
+                    "timestamp": "2021-03-22T17:18:03Z",
+                },
+            }
+        )
+
+        response = GetSystemStatusResponse.from_response(json_response)
+
+        assert response.is_success is True
+        assert response.success.status == "online"
+        assert response.success.timestamp == "2021-03-22T17:18:03Z"
+
+    def test_invalid_response_format(self):
+        """Test that invalid response format raises appropriate error"""
+        invalid_response = {"error": []}  # Missing 'result'
+
+        with pytest.raises(ValueError, match="missing 'result'"):
+            GetSystemStatusResponse.from_response(invalid_response)
+
+    def test_success_model_direct_instantiation(self):
+        """Test creating GetSystemStatusSuccess directly with all status types"""
+        # Online status
+        success1 = GetSystemStatusSuccess(
+            status="online",
+            timestamp="2021-03-22T17:18:03Z",
+        )
+        assert success1.status == "online"
+        assert success1.timestamp == "2021-03-22T17:18:03Z"
+
+        # Maintenance status
+        success2 = GetSystemStatusSuccess(
+            status="maintenance",
+            timestamp="2023-10-15T12:00:00Z",
+        )
+        assert success2.status == "maintenance"
+
+        # Cancel only status
+        success3 = GetSystemStatusSuccess(
+            status="cancel_only",
+            timestamp="2024-01-01T00:00:00Z",
+        )
+        assert success3.status == "cancel_only"
+
+        # Post only status
+        success4 = GetSystemStatusSuccess(
+            status="post_only",
+            timestamp="2024-06-15T18:30:45Z",
+        )
+        assert success4.status == "post_only"
+
+    def test_success_model_field_types(self):
+        """Test that field types are enforced"""
+        # Valid types
+        success = GetSystemStatusSuccess(
+            status="online",
+            timestamp="2021-03-22T17:18:03Z",
+        )
+
+        assert isinstance(success.status, str)
+        assert isinstance(success.timestamp, str)
+        assert success.status in ["online", "maintenance", "cancel_only", "post_only"]
+
+    def test_error_model_direct_instantiation(self):
+        """Test creating error response directly"""
+        from kraken.rest.schema.base import ResponseErrorSchema
+
+        error = ResponseErrorSchema(error=["EGeneral:Internal error"])
+
+        assert len(error.error) == 1
+        assert error.error[0] == "EGeneral:Internal error"
+
+    def test_response_wrapper_direct_instantiation(self):
+        """Test creating GetSystemStatusResponse wrapper directly"""
+        success = GetSystemStatusSuccess(
+            status="online",
+            timestamp="2021-03-22T17:18:03Z",
+        )
+        response = GetSystemStatusResponse(success=success)
+
+        assert response.is_success is True
+        assert response.success.status == "online"
+
+        from kraken.rest.schema.base import ResponseErrorSchema
+
+        error = ResponseErrorSchema(error=["Test error"])
+        response2 = GetSystemStatusResponse(failure=error)
+
+        assert response2.is_success is False
+        assert response2.failure.error[0] == "Test error"
+
+    def test_concurrent_response_parsing(self):
+        """Test concurrent parsing of multiple responses"""
+        import concurrent.futures
+
+        statuses = ["online", "maintenance", "cancel_only", "post_only"]
+
+        def parse_response(i):
+            kraken_response = {
+                "error": [],
+                "result": {
+                    "status": statuses[i % len(statuses)],
+                    "timestamp": f"2021-03-22T17:18:{i:02d}Z",
+                },
+            }
+            return GetSystemStatusResponse.from_response(kraken_response)
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            responses = list(executor.map(parse_response, range(20)))
+
+        assert len(responses) == 20
+        for i, resp in enumerate(responses):
+            assert resp.is_success is True
+            assert resp.success.status == statuses[i % len(statuses)]
+
+    def test_response_immutability(self):
+        """Test that response objects maintain their data correctly"""
+        kraken_response = {
+            "error": [],
+            "result": {
+                "status": "online",
+                "timestamp": "2021-03-22T17:18:03Z",
+            },
+        }
+
+        response = GetSystemStatusResponse.from_response(kraken_response)
+
+        # Store original values
+        original_status = response.success.status
+        original_timestamp = response.success.timestamp
+
+        # Values should remain unchanged
+        assert response.success.status == original_status
+        assert response.success.timestamp == original_timestamp
+
+    def test_all_status_literals(self):
+        """Test that all documented status literals work correctly"""
+        statuses = ["online", "maintenance", "cancel_only", "post_only"]
+
+        for status in statuses:
+            kraken_response = {
+                "error": [],
+                "result": {
+                    "status": status,
+                    "timestamp": "2021-03-22T17:18:03Z",
+                },
+            }
+
+            response = GetSystemStatusResponse.from_response(kraken_response)
+
+            assert response.is_success is True
+            assert response.success.status == status
+            assert response.success.timestamp == "2021-03-22T17:18:03Z"
+
+    def test_status_field_validation_rejects_typos(self):
+        """Test that common typos in status field are rejected"""
+        invalid_statuses = [
+            "Online",  # Wrong case
+            "ONLINE",  # Wrong case
+            "on-line",  # Wrong format
+            "cancelonly",  # Missing underscore
+            "cancel-only",  # Wrong separator
+            "postonly",  # Missing underscore
+            "post-only",  # Wrong separator
+        ]
+
+        for invalid_status in invalid_statuses:
+            with pytest.raises(ValidationError):
+                GetSystemStatusSuccess(
+                    status=invalid_status,
+                    timestamp="2021-03-22T17:18:03Z",
+                )
