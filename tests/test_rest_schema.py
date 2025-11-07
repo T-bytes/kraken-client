@@ -21,6 +21,10 @@ from kraken.rest.schema.market import (
     GetSystemStatusRequest,
     GetSystemStatusResponse,
     GetSystemStatusSuccess,
+    GetTickerInformationRequest,
+    GetTickerInformationResponse,
+    GetTickerInformationSuccess,
+    TickerInfo,
 )
 from kraken.rest.schema.trading import (
     AddOrderBatchRequest,
@@ -5581,3 +5585,446 @@ class TestGetAssetPairsResponse:
         assert response.success.pairs["PAIR0"].altname == "P0"
         assert response.success.pairs["PAIR25"].altname == "P25"
         assert response.success.pairs["PAIR49"].altname == "P49"
+
+
+class TestGetTickerInformationRequest:
+    """Tests for GetTickerInformationRequest schema"""
+
+    def test_minimal_valid_request_no_params(self):
+        """Test creating a minimal valid request with no parameters"""
+        ticker_request = GetTickerInformationRequest()
+
+        assert ticker_request.pair is None
+        assert ticker_request.asset_class is None
+
+    def test_request_with_single_pair_string(self):
+        """Test request with single pair as string"""
+        ticker_request = GetTickerInformationRequest(pair="XBTUSD")
+
+        assert ticker_request.pair == "XBTUSD"
+        assert ticker_request.asset_class is None
+
+    def test_request_with_multiple_pairs_string(self):
+        """Test request with multiple pairs as comma-delimited string"""
+        ticker_request = GetTickerInformationRequest(pair="XBTUSD,ETHUSD,ADAUSD")
+
+        assert ticker_request.pair == "XBTUSD,ETHUSD,ADAUSD"
+
+    def test_request_with_single_pair_list(self):
+        """Test request with single pair as list"""
+        ticker_request = GetTickerInformationRequest(pair=["XBTUSD"])
+
+        assert ticker_request.pair == "XBTUSD"
+
+    def test_request_with_multiple_pairs_list(self):
+        """Test request with multiple pairs as list"""
+        ticker_request = GetTickerInformationRequest(pair=["XBTUSD", "ETHUSD", "ADAUSD"])
+
+        assert ticker_request.pair == "XBTUSD,ETHUSD,ADAUSD"
+
+    def test_pair_normalization_whitespace(self):
+        """Test that pair list with whitespace is normalized"""
+        ticker_request = GetTickerInformationRequest(pair=[" XBTUSD ", "  ETHUSD", "ADAUSD  "])
+
+        assert ticker_request.pair == "XBTUSD,ETHUSD,ADAUSD"
+
+    def test_pair_normalization_duplicates(self):
+        """Test that duplicate pairs are removed while preserving order"""
+        ticker_request = GetTickerInformationRequest(
+            pair=["XBTUSD", "ETHUSD", "XBTUSD", "ADAUSD", "ETHUSD"]
+        )
+
+        # Should keep first occurrence only
+        assert ticker_request.pair == "XBTUSD,ETHUSD,ADAUSD"
+
+    def test_request_with_asset_class(self):
+        """Test request with asset_class parameter"""
+        ticker_request = GetTickerInformationRequest(asset_class="tokenized_asset")
+
+        assert ticker_request.asset_class == "tokenized_asset"
+        assert ticker_request.pair is None
+
+    def test_request_with_both_pair_and_asset_class(self):
+        """Test request with both pair and asset_class"""
+        ticker_request = GetTickerInformationRequest(
+            pair="TSLA/USD", asset_class="tokenized_asset"
+        )
+
+        assert ticker_request.pair == "TSLA/USD"
+        assert ticker_request.asset_class == "tokenized_asset"
+
+    def test_empty_list_validation(self):
+        """Test that empty list is rejected"""
+        with pytest.raises(ValidationError) as exc_info:
+            GetTickerInformationRequest(pair=[])
+
+        assert "cannot be empty" in str(exc_info.value).lower()
+
+    def test_empty_string_validation(self):
+        """Test that empty string is rejected"""
+        with pytest.raises(ValidationError) as exc_info:
+            GetTickerInformationRequest(pair="")
+
+        assert (
+            "empty" in str(exc_info.value).lower() or "whitespace" in str(exc_info.value).lower()
+        )
+
+    def test_to_api_dict_no_params(self):
+        """Test to_api_dict() serialization with no parameters"""
+        ticker_request = GetTickerInformationRequest()
+
+        data = ticker_request.to_api_dict()
+
+        # Should return empty dict with no parameters
+        assert data == {}
+
+    def test_to_api_dict_with_params(self):
+        """Test to_api_dict() serialization excludes None by default"""
+        ticker_request = GetTickerInformationRequest(pair="XBTUSD,ETHUSD")
+
+        data = ticker_request.to_api_dict()
+
+        # Should include pair but not asset_class (None)
+        assert "pair" in data
+        assert data["pair"] == "XBTUSD,ETHUSD"
+        assert "asset_class" not in data
+
+    def test_to_api_dict_exclude_none_false(self):
+        """Test to_api_dict() with exclude_none=False includes None values"""
+        ticker_request = GetTickerInformationRequest(pair="XBTUSD")
+
+        data = ticker_request.to_api_dict(exclude_none=False)
+
+        # Should include both pair and asset_class (None)
+        assert "pair" in data
+        assert "asset_class" in data
+        assert data["pair"] == "XBTUSD"
+        assert data["asset_class"] is None
+
+    def test_list_to_string_conversion(self):
+        """Test that list is properly converted to comma-delimited string"""
+        ticker_request = GetTickerInformationRequest(pair=["XBTUSD", "ETHUSD"])
+
+        data = ticker_request.to_api_dict()
+
+        # Should be converted to string
+        assert isinstance(data["pair"], str)
+        assert data["pair"] == "XBTUSD,ETHUSD"
+
+    def test_string_vs_list_equivalence(self):
+        """Test that string and list inputs produce equivalent results"""
+        request_string = GetTickerInformationRequest(pair="XBTUSD,ETHUSD,ADAUSD")
+        request_list = GetTickerInformationRequest(pair=["XBTUSD", "ETHUSD", "ADAUSD"])
+
+        assert request_string.pair == request_list.pair
+        assert request_string.to_api_dict() == request_list.to_api_dict()
+
+    def test_multiple_instances(self):
+        """Test creating multiple GetTickerInformationRequest instances"""
+        requests = [
+            GetTickerInformationRequest(),
+            GetTickerInformationRequest(pair="XBTUSD"),
+            GetTickerInformationRequest(asset_class="forex"),
+            GetTickerInformationRequest(pair="ETHUSD", asset_class="forex"),
+        ]
+
+        assert len(requests) == 4
+        for req in requests:
+            assert req is not None
+
+
+class TestGetTickerInformationResponse:
+    """Tests for GetTickerInformation response schemas"""
+
+    def test_ticker_info_direct_instantiation(self):
+        """Test creating TickerInfo directly"""
+        ticker = TickerInfo(
+            a=["50000.00000", "1", "1.000"],
+            b=["49999.90000", "2", "2.000"],
+            c=["50000.00000", "0.00100000"],
+            v=["1234.56789012", "2345.67890123"],
+            p=["49500.12345", "49600.23456"],
+            t=[1000, 2000],
+            l=["49000.00000", "48900.00000"],
+            h=["50500.00000", "50600.00000"],
+            o="49800.00000",
+        )
+
+        assert ticker.a == ["50000.00000", "1", "1.000"]
+        assert ticker.b == ["49999.90000", "2", "2.000"]
+        assert ticker.c == ["50000.00000", "0.00100000"]
+        assert ticker.v == ["1234.56789012", "2345.67890123"]
+        assert ticker.p == ["49500.12345", "49600.23456"]
+        assert ticker.t == [1000, 2000]
+        assert ticker.l == ["49000.00000", "48900.00000"]
+        assert ticker.h == ["50500.00000", "50600.00000"]
+        assert ticker.o == "49800.00000"
+
+    def test_success_response_single_pair(self):
+        """Test parsing a successful response with single pair"""
+        kraken_response = {
+            "error": [],
+            "result": {
+                "XXBTZUSD": {
+                    "a": ["50000.00000", "1", "1.000"],
+                    "b": ["49999.90000", "2", "2.000"],
+                    "c": ["50000.00000", "0.00100000"],
+                    "v": ["1234.56789012", "2345.67890123"],
+                    "p": ["49500.12345", "49600.23456"],
+                    "t": [1000, 2000],
+                    "l": ["49000.00000", "48900.00000"],
+                    "h": ["50500.00000", "50600.00000"],
+                    "o": "49800.00000",
+                }
+            },
+        }
+
+        response = GetTickerInformationResponse.from_response(kraken_response)
+
+        assert response.is_success is True
+        assert response.success is not None
+        assert response.failure is None
+        assert len(response.success.tickers) == 1
+        assert "XXBTZUSD" in response.success.tickers
+
+        ticker = response.success.tickers["XXBTZUSD"]
+        assert ticker.a == ["50000.00000", "1", "1.000"]
+        assert ticker.o == "49800.00000"
+
+    def test_success_response_multiple_pairs(self):
+        """Test parsing a successful response with multiple pairs"""
+        kraken_response = {
+            "error": [],
+            "result": {
+                "XXBTZUSD": {
+                    "a": ["50000.00000", "1", "1.000"],
+                    "b": ["49999.90000", "2", "2.000"],
+                    "c": ["50000.00000", "0.00100000"],
+                    "v": ["1234.56789012", "2345.67890123"],
+                    "p": ["49500.12345", "49600.23456"],
+                    "t": [1000, 2000],
+                    "l": ["49000.00000", "48900.00000"],
+                    "h": ["50500.00000", "50600.00000"],
+                    "o": "49800.00000",
+                },
+                "XETHZUSD": {
+                    "a": ["3000.00000", "10", "10.000"],
+                    "b": ["2999.90000", "20", "20.000"],
+                    "c": ["3000.00000", "1.50000000"],
+                    "v": ["5000.12345678", "6000.23456789"],
+                    "p": ["2950.12345", "2960.23456"],
+                    "t": [500, 1000],
+                    "l": ["2900.00000", "2890.00000"],
+                    "h": ["3050.00000", "3060.00000"],
+                    "o": "2980.00000",
+                },
+                "XADAZUSD": {
+                    "a": ["0.50000", "1000", "1000.000"],
+                    "b": ["0.49900", "2000", "2000.000"],
+                    "c": ["0.50000", "500.00000000"],
+                    "v": ["100000.12345678", "200000.23456789"],
+                    "p": ["0.49500", "0.49600"],
+                    "t": [2000, 4000],
+                    "l": ["0.48000", "0.47000"],
+                    "h": ["0.51000", "0.52000"],
+                    "o": "0.49000",
+                },
+            },
+        }
+
+        response = GetTickerInformationResponse.from_response(kraken_response)
+
+        assert response.is_success is True
+        assert len(response.success.tickers) == 3
+        assert "XXBTZUSD" in response.success.tickers
+        assert "XETHZUSD" in response.success.tickers
+        assert "XADAZUSD" in response.success.tickers
+
+        # Verify ticker instances
+        for ticker_info in response.success.tickers.values():
+            assert isinstance(ticker_info, TickerInfo)
+
+    def test_success_response_many_pairs(self):
+        """Test response with many pairs (simulating full ticker list)"""
+        # Create a response with 50 different pairs
+        result = {}
+        for i in range(50):
+            result[f"PAIR{i}USD"] = {
+                "a": [f"{1000 + i}.00000", "1", "1.000"],
+                "b": [f"{999 + i}.90000", "2", "2.000"],
+                "c": [f"{1000 + i}.00000", "0.00100000"],
+                "v": [f"{1234 + i}.56789012", f"{2345 + i}.67890123"],
+                "p": [f"{995 + i}.12345", f"{996 + i}.23456"],
+                "t": [1000 + i, 2000 + i],
+                "l": [f"{990 + i}.00000", f"{989 + i}.00000"],
+                "h": [f"{1005 + i}.00000", f"{1006 + i}.00000"],
+                "o": f"{998 + i}.00000",
+            }
+
+        kraken_response = {"error": [], "result": result}
+
+        response = GetTickerInformationResponse.from_response(kraken_response)
+
+        assert response.is_success is True
+        assert len(response.success.tickers) == 50
+
+        # Verify a few samples
+        assert response.success.tickers["PAIR0USD"].o == "998.00000"
+        assert response.success.tickers["PAIR25USD"].o == "1023.00000"
+        assert response.success.tickers["PAIR49USD"].o == "1047.00000"
+
+    def test_parse_from_dict(self):
+        """Test parsing from dict"""
+        kraken_response = {
+            "error": [],
+            "result": {
+                "XXBTZUSD": {
+                    "a": ["50000.00000", "1", "1.000"],
+                    "b": ["49999.90000", "2", "2.000"],
+                    "c": ["50000.00000", "0.00100000"],
+                    "v": ["1234.56789012", "2345.67890123"],
+                    "p": ["49500.12345", "49600.23456"],
+                    "t": [1000, 2000],
+                    "l": ["49000.00000", "48900.00000"],
+                    "h": ["50500.00000", "50600.00000"],
+                    "o": "49800.00000",
+                }
+            },
+        }
+
+        response = GetTickerInformationResponse.from_response(kraken_response)
+
+        assert response.is_success is True
+        assert "XXBTZUSD" in response.success.tickers
+
+    def test_parse_from_json_string(self):
+        """Test parsing from JSON string"""
+        json_response = json.dumps(
+            {
+                "error": [],
+                "result": {
+                    "XXBTZUSD": {
+                        "a": ["50000.00000", "1", "1.000"],
+                        "b": ["49999.90000", "2", "2.000"],
+                        "c": ["50000.00000", "0.00100000"],
+                        "v": ["1234.56789012", "2345.67890123"],
+                        "p": ["49500.12345", "49600.23456"],
+                        "t": [1000, 2000],
+                        "l": ["49000.00000", "48900.00000"],
+                        "h": ["50500.00000", "50600.00000"],
+                        "o": "49800.00000",
+                    }
+                },
+            }
+        )
+
+        response = GetTickerInformationResponse.from_response(json_response)
+
+        assert response.is_success is True
+        assert "XXBTZUSD" in response.success.tickers
+
+    def test_error_response_single_error(self):
+        """Test parsing an error response with single error"""
+        kraken_response = {
+            "error": ["EGeneral:Invalid arguments"],
+        }
+
+        response = GetTickerInformationResponse.from_response(kraken_response)
+
+        assert response.is_success is False
+        assert response.success is None
+        assert response.failure is not None
+        assert "EGeneral:Invalid arguments" in response.failure.error
+
+    def test_error_response_multiple_errors(self):
+        """Test parsing an error response with multiple errors"""
+        kraken_response = {
+            "error": [
+                "EGeneral:Invalid arguments",
+                "EQuery:Unknown asset pair",
+            ],
+        }
+
+        response = GetTickerInformationResponse.from_response(kraken_response)
+
+        assert response.is_success is False
+        assert len(response.failure.error) == 2
+        assert "EGeneral:Invalid arguments" in response.failure.error
+        assert "EQuery:Unknown asset pair" in response.failure.error
+
+    def test_invalid_response_format(self):
+        """Test that invalid response format raises appropriate error"""
+        invalid_response = {"error": []}  # Missing 'result'
+
+        with pytest.raises(ValueError, match="missing 'result'"):
+            GetTickerInformationResponse.from_response(invalid_response)
+
+    def test_success_model_direct_instantiation(self):
+        """Test creating GetTickerInformationSuccess directly"""
+        ticker = TickerInfo(
+            a=["50000.00000", "1", "1.000"],
+            b=["49999.90000", "2", "2.000"],
+            c=["50000.00000", "0.00100000"],
+            v=["1234.56789012", "2345.67890123"],
+            p=["49500.12345", "49600.23456"],
+            t=[1000, 2000],
+            l=["49000.00000", "48900.00000"],
+            h=["50500.00000", "50600.00000"],
+            o="49800.00000",
+        )
+
+        success = GetTickerInformationSuccess(tickers={"XXBTZUSD": ticker})
+
+        assert len(success.tickers) == 1
+        assert "XXBTZUSD" in success.tickers
+        assert success.tickers["XXBTZUSD"].o == "49800.00000"
+
+    def test_response_wrapper_direct_instantiation(self):
+        """Test creating GetTickerInformationResponse wrapper directly"""
+        ticker = TickerInfo(
+            a=["50000.00000", "1", "1.000"],
+            b=["49999.90000", "2", "2.000"],
+            c=["50000.00000", "0.00100000"],
+            v=["1234.56789012", "2345.67890123"],
+            p=["49500.12345", "49600.23456"],
+            t=[1000, 2000],
+            l=["49000.00000", "48900.00000"],
+            h=["50500.00000", "50600.00000"],
+            o="49800.00000",
+        )
+        success = GetTickerInformationSuccess(tickers={"XXBTZUSD": ticker})
+        response = GetTickerInformationResponse(success=success)
+
+        assert response.is_success is True
+        assert response.success.tickers["XXBTZUSD"].o == "49800.00000"
+
+        error = ResponseErrorSchema(error=["Test error"])
+        response2 = GetTickerInformationResponse(failure=error)
+
+        assert response2.is_success is False
+        assert response2.failure.error[0] == "Test error"
+
+    def test_is_success_property(self):
+        """Test is_success property verification"""
+        # Success case
+        ticker = TickerInfo(
+            a=["50000.00000", "1", "1.000"],
+            b=["49999.90000", "2", "2.000"],
+            c=["50000.00000", "0.00100000"],
+            v=["1234.56789012", "2345.67890123"],
+            p=["49500.12345", "49600.23456"],
+            t=[1000, 2000],
+            l=["49000.00000", "48900.00000"],
+            h=["50500.00000", "50600.00000"],
+            o="49800.00000",
+        )
+        success = GetTickerInformationSuccess(tickers={"XXBTZUSD": ticker})
+        response_success = GetTickerInformationResponse(success=success)
+
+        assert response_success.is_success is True
+
+        # Failure case
+        error = ResponseErrorSchema(error=["Test error"])
+        response_failure = GetTickerInformationResponse(failure=error)
+
+        assert response_failure.is_success is False

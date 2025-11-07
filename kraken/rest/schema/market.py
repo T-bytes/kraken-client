@@ -569,3 +569,178 @@ class GetAssetPairsResponse(BaseResponseWrapper[GetAssetPairsSuccess]):
         pairs = {pair_name: AssetPairInfo(**pair_data) for pair_name, pair_data in result.items()}
         success_data = GetAssetPairsSuccess(pairs=pairs)
         return cls(success=success_data)
+
+
+class TickerInfo(BaseSchema):
+    """Individual ticker information for a trading pair from Kraken API.
+
+    Contains real-time market data including bid/ask prices, last trade,
+    volume, price ranges, and trade counts. Prices start at midnight UTC
+    and statistics are provided for both 'today' and 'last 24 hours'.
+    """
+
+    a: list[str] = Field(
+        ...,
+        description="Ask array [price, whole lot volume, lot volume]. Price and volumes as strings for precision.",
+    )
+    b: list[str] = Field(
+        ...,
+        description="Bid array [price, whole lot volume, lot volume]. Price and volumes as strings for precision.",
+    )
+    c: list[str] = Field(
+        ...,
+        description="Last trade closed array [price, lot volume]. Price and volume as strings for precision.",
+    )
+    v: list[str] = Field(
+        ...,
+        description="Volume array [today, last 24 hours]. Volumes as strings for precision.",
+    )
+    p: list[str] = Field(
+        ...,
+        description="Volume weighted average price array [today, last 24 hours]. Prices as strings for precision.",
+    )
+    t: list[int] = Field(
+        ...,
+        description="Number of trades array [today, last 24 hours].",
+    )
+    l: list[str] = Field(
+        ...,
+        description="Low price array [today, last 24 hours]. Prices as strings for precision.",
+    )
+    h: list[str] = Field(
+        ...,
+        description="High price array [today, last 24 hours]. Prices as strings for precision.",
+    )
+    o: str = Field(
+        ...,
+        description="Today's opening price. Price as string for precision.",
+    )
+
+
+class GetTickerInformationRequest(BaseRequestSchema):
+    """Schema for Kraken GetTickerInformation API request.
+
+    This schema validates and prepares data for submission to Kraken's
+    GetTickerInformation (Ticker) API endpoint, which retrieves ticker
+    information for all or requested markets.
+
+    Important Notes:
+        - This is a public endpoint that requires no authentication.
+        - All parameters are optional.
+        - Today's prices start at midnight UTC.
+        - Leaving the 'pair' parameter blank will return tickers for all tradeable assets on Kraken.
+        - The 'pair' parameter accepts both a comma-delimited string or a list of strings.
+        - The 'asset_class' parameter is required for tokenized pairs (e.g., xstocks).
+        - Use to_api_dict() to serialize for API submission.
+
+    Usage Examples:
+        Get all tickers:
+        >>> ticker_request = GetTickerInformationRequest()
+        >>> data = ticker_request.to_api_dict()
+        >>> response = client.request("Ticker", data=data)
+
+        Get specific pairs (string format):
+        >>> ticker_request = GetTickerInformationRequest(pair="XBTUSD,ETHUSD")
+        >>> data = ticker_request.to_api_dict()
+        >>> response = client.request("Ticker", data=data)
+
+        Get specific pairs (list format):
+        >>> ticker_request = GetTickerInformationRequest(pair=["XBTUSD", "ETHUSD"])
+        >>> data = ticker_request.to_api_dict()
+        >>> # Result: {"pair": "XBTUSD,ETHUSD"}
+
+        Filter by asset class (tokenized assets):
+        >>> ticker_request = GetTickerInformationRequest(asset_class="tokenized_asset")
+        >>> response = client.request("Ticker", data=ticker_request.to_api_dict())
+
+        Get specific tokenized pair:
+        >>> ticker_request = GetTickerInformationRequest(
+        ...     pair="TSLA/USD",
+        ...     asset_class="tokenized_asset"
+        ... )
+        >>> response = client.request("Ticker", data=ticker_request.to_api_dict())
+
+        Async usage:
+        >>> ticker_request = GetTickerInformationRequest(pair=["XBTUSD", "ETHUSD"])
+        >>> response = await client.arequest("Ticker", data=ticker_request.to_api_dict())
+    """
+
+    pair: str | list[str] | None = Field(
+        default=None,
+        description="Comma-delimited string or list of asset pairs to get data for (e.g., 'XBTUSD,ETHUSD' or ['XBTUSD', 'ETHUSD']). Default: all tradeable pairs.",
+    )
+    asset_class: Literal["tokenized_asset", "forex"] | None = Field(
+        default=None,
+        description="Asset class filter. Required for tokenized pairs (e.g., xstocks). If asset_class is provided without pair, all pairs for that asset class will be returned. Default: 'forex'.",
+    )
+
+    @field_validator("pair", mode="before")
+    @classmethod
+    def normalize_pair_list(cls, value: str | list[str] | None) -> str | None:
+        """Convert pair list to comma-delimited string format.
+
+        Accepts either a string (returned as-is) or a list of strings
+        (converted to comma-delimited format). Validates that list items
+        are non-empty strings and removes duplicates while preserving order.
+
+        Args:
+            value: Either a comma-delimited string, a list of pair strings, or None
+
+        Returns:
+            Comma-delimited string or None
+
+        Raises:
+            ValueError: If list contains empty strings or non-string values
+        """
+        return validators.normalize_comma_separated_list(value)
+
+
+class GetTickerInformationSuccess(BaseSchema):
+    """Successful GetTickerInformation response from Kraken API.
+
+    Contains a dictionary of tickers keyed by pair name, with each value
+    containing real-time market data for that trading pair.
+    """
+
+    tickers: dict[str, TickerInfo] = Field(
+        default_factory=dict,
+        description="Dictionary mapping asset pair names to their ticker information.",
+    )
+
+
+class GetTickerInformationResponse(BaseResponseWrapper[GetTickerInformationSuccess]):
+    """Combined response wrapper for GetTickerInformation API calls.
+
+    This wrapper handles both success and error cases from the Kraken API.
+    Use the `is_success` property to determine the outcome and access the
+    appropriate `success` or `error` attribute.
+    """
+
+    @classmethod
+    def from_response(cls, response: dict | str) -> "GetTickerInformationResponse":
+        """Parse a Kraken API response into the appropriate response model.
+
+        Args:
+            response: Either a JSON string or dict containing the API response
+
+        Returns:
+            GetTickerInformationResponse with either success or error data populated
+
+        Raises:
+            ValueError: If the response format is invalid
+        """
+        if isinstance(response, str):
+            response = json.loads(response)
+        errors = response.get("error", [])
+        if errors:
+            error_data = ResponseErrorSchema(error=errors)
+            return cls(failure=error_data)
+        result = response.get("result")
+        if result is None:
+            raise ValueError("Response missing 'result' field")
+
+        tickers = {
+            pair_name: TickerInfo(**ticker_data) for pair_name, ticker_data in result.items()
+        }
+        success_data = GetTickerInformationSuccess(tickers=tickers)
+        return cls(success=success_data)
