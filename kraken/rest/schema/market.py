@@ -328,3 +328,244 @@ class GetServerTimeResponse(BaseResponseWrapper[GetServerTimeSuccess]):
             rfc1123=result["rfc1123"],
         )
         return cls(success=success_data)
+
+
+class AssetPairInfo(BaseSchema):
+    """Individual asset pair information from Kraken API.
+
+    Contains detailed information about a specific trading pair including
+    its base and quote assets, decimal precision for various calculations,
+    trading status, and minimum order requirements. Additional fields may
+    be present depending on the 'info' parameter used in the request.
+    """
+
+    altname: str = Field(
+        ...,
+        description="Alternate pair name.",
+    )
+    wsname: str | None = Field(
+        None,
+        description="WebSocket pair name (if available).",
+    )
+    aclass_base: str = Field(
+        ...,
+        description="Asset class of base component.",
+    )
+    base: str = Field(
+        ...,
+        description="Asset ID of base component.",
+    )
+    aclass_quote: str = Field(
+        ...,
+        description="Asset class of quote component.",
+    )
+    quote: str = Field(
+        ...,
+        description="Asset ID of quote component.",
+    )
+    pair_decimals: int = Field(
+        ...,
+        description="Number of decimal places for prices in this pair.",
+    )
+    cost_decimals: int = Field(
+        ...,
+        description="Number of decimal places for cost of trades in pair (quote asset terms).",
+    )
+    lot_decimals: int = Field(
+        ...,
+        description="Number of decimal places for volume (base asset terms).",
+    )
+    lot_multiplier: int = Field(
+        ...,
+        description="Amount to multiply lot volume by to get currency volume.",
+    )
+    leverage_buy: list[int] | None = Field(
+        None,
+        description="Array of leverage amounts available when buying.",
+    )
+    leverage_sell: list[int] | None = Field(
+        None,
+        description="Array of leverage amounts available when selling.",
+    )
+    fees: list[list[int | float]] | None = Field(
+        None,
+        description="Fee schedule array in [<volume>, <percent fee>] tuples.",
+    )
+    fees_maker: list[list[int | float]] | None = Field(
+        None,
+        description="Maker fee schedule array in [<volume>, <percent fee>] tuples (if on maker/taker).",
+    )
+    fee_volume_currency: str | None = Field(
+        None,
+        description="Volume discount currency.",
+    )
+    margin_call: int | None = Field(
+        None,
+        description="Margin call level.",
+    )
+    margin_stop: int | None = Field(
+        None,
+        description="Stop-out/liquidation margin level.",
+    )
+    ordermin: str = Field(
+        ...,
+        description="Minimum order size (in terms of base currency).",
+    )
+    costmin: str = Field(
+        ...,
+        description="Minimum order cost (in terms of quote currency).",
+    )
+    tick_size: str = Field(
+        ...,
+        description="Minimum increment between valid price levels.",
+    )
+    status: Literal["online", "cancel_only", "post_only", "limit_only", "reduce_only"] = Field(
+        ...,
+        description="Status of asset. Possible values: online, cancel_only, post_only, limit_only, reduce_only.",
+    )
+    long_position_limit: int | None = Field(
+        None,
+        description="Maximum long margin position size (in terms of base currency).",
+    )
+    short_position_limit: int | None = Field(
+        None,
+        description="Maximum short margin position size (in terms of base currency).",
+    )
+
+
+class GetAssetPairsRequest(BaseRequestSchema):
+    """Schema for Kraken GetAssetPairs API request.
+
+    This schema validates and prepares data for submission to Kraken's
+    GetAssetPairs (AssetPairs) API endpoint, which retrieves information
+    about tradeable asset pairs available on the exchange.
+
+    Important Notes:
+        - This is a public endpoint that requires no authentication.
+        - All parameters are optional.
+        - The 'pair' parameter accepts both a comma-delimited string or a list of strings.
+        - The 'info' parameter controls which fields appear in the response.
+        - Use to_api_dict() to serialize for API submission.
+
+    Usage Examples:
+        Get all asset pairs:
+        >>> pairs_request = GetAssetPairsRequest()
+        >>> data = pairs_request.to_api_dict()
+        >>> response = client.request("AssetPairs", data=data)
+
+        Get specific pairs (string format):
+        >>> pairs_request = GetAssetPairsRequest(pair="BTC/USD,ETH/BTC")
+        >>> data = pairs_request.to_api_dict()
+        >>> response = client.request("AssetPairs", data=data)
+
+        Get specific pairs (list format):
+        >>> pairs_request = GetAssetPairsRequest(pair=["BTC/USD", "ETH/BTC"])
+        >>> data = pairs_request.to_api_dict()
+        >>> # Result: {"pair": "BTC/USD,ETH/BTC"}
+
+        Filter by asset class:
+        >>> pairs_request = GetAssetPairsRequest(aclass_base="currency")
+        >>> response = client.request("AssetPairs", data=pairs_request.to_api_dict())
+
+        Get leverage information:
+        >>> pairs_request = GetAssetPairsRequest(pair="BTC/USD", info="leverage")
+        >>> response = client.request("AssetPairs", data=pairs_request.to_api_dict())
+
+        Get fee information:
+        >>> pairs_request = GetAssetPairsRequest(info="fees")
+        >>> response = client.request("AssetPairs", data=pairs_request.to_api_dict())
+
+        Filter by country:
+        >>> pairs_request = GetAssetPairsRequest(country_code="GB")
+        >>> response = client.request("AssetPairs", data=pairs_request.to_api_dict())
+
+        Async usage:
+        >>> pairs_request = GetAssetPairsRequest(pair=["BTC/USD", "ETH/BTC"])
+        >>> response = await client.arequest("AssetPairs", data=pairs_request.to_api_dict())
+    """
+
+    pair: str | list[str] | None = Field(
+        default=None,
+        description="Asset pairs to get data for (e.g., 'BTC/USD,ETH/BTC' or ['BTC/USD', 'ETH/BTC']).",
+    )
+    aclass_base: Literal["currency", "tokenized_asset"] | None = Field(
+        default=None,
+        description="Filters the asset class to retrieve. 'currency' = spot currency pairs, 'tokenized_asset' = tokenized asset pairs (e.g., xstocks). Default: 'currency'.",
+    )
+    info: Literal["info", "leverage", "fees", "margin"] | None = Field(
+        default=None,
+        description="Info to retrieve: 'info' (all info, default), 'leverage' (leverage info), 'fees' (fee schedule), 'margin' (margin info).",
+    )
+    country_code: str | None = Field(
+        default=None,
+        description="ISO 3166-1 alpha-2 country code to filter pairs available in the provided country/region (e.g., 'GB').",
+    )
+
+    @field_validator("pair", mode="before")
+    @classmethod
+    def normalize_pair_list(cls, value: str | list[str] | None) -> str | None:
+        """Convert pair list to comma-delimited string format.
+
+        Accepts either a string (returned as-is) or a list of strings
+        (converted to comma-delimited format). Validates that list items
+        are non-empty strings and removes duplicates while preserving order.
+
+        Args:
+            value: Either a comma-delimited string, a list of pair strings, or None
+
+        Returns:
+            Comma-delimited string or None
+
+        Raises:
+            ValueError: If list contains empty strings or non-string values
+        """
+        return validators.normalize_comma_separated_list(value)
+
+
+class GetAssetPairsSuccess(BaseSchema):
+    """Successful GetAssetPairs response from Kraken API.
+
+    Contains a dictionary of asset pairs keyed by pair name, with each value
+    containing detailed information about that trading pair.
+    """
+
+    pairs: dict[str, AssetPairInfo] = Field(
+        default_factory=dict,
+        description="Dictionary mapping asset pair names to their information.",
+    )
+
+
+class GetAssetPairsResponse(BaseResponseWrapper[GetAssetPairsSuccess]):
+    """Combined response wrapper for GetAssetPairs API calls.
+
+    This wrapper handles both success and error cases from the Kraken API.
+    Use the `is_success` property to determine the outcome and access the
+    appropriate `success` or `error` attribute.
+    """
+
+    @classmethod
+    def from_response(cls, response: dict | str) -> "GetAssetPairsResponse":
+        """Parse a Kraken API response into the appropriate response model.
+
+        Args:
+            response: Either a JSON string or dict containing the API response
+
+        Returns:
+            GetAssetPairsResponse with either success or error data populated
+
+        Raises:
+            ValueError: If the response format is invalid
+        """
+        if isinstance(response, str):
+            response = json.loads(response)
+        errors = response.get("error", [])
+        if errors:
+            error_data = ResponseErrorSchema(error=errors)
+            return cls(failure=error_data)
+        result = response.get("result")
+        if result is None:
+            raise ValueError("Response missing 'result' field")
+
+        pairs = {pair_name: AssetPairInfo(**pair_data) for pair_name, pair_data in result.items()}
+        success_data = GetAssetPairsSuccess(pairs=pairs)
+        return cls(success=success_data)

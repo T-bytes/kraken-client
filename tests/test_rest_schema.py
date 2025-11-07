@@ -8,9 +8,13 @@ from pydantic import ValidationError
 
 from kraken.rest.schema.market import (
     AssetInfo,
+    AssetPairInfo,
     GetAssetInfoRequest,
     GetAssetInfoResponse,
     GetAssetInfoSuccess,
+    GetAssetPairsRequest,
+    GetAssetPairsResponse,
+    GetAssetPairsSuccess,
     GetServerTimeRequest,
     GetServerTimeResponse,
     GetServerTimeSuccess,
@@ -4793,3 +4797,787 @@ class TestNormalizeCommaSeperatedListValidator:
         """Test that GetAssetInfoRequest raises error for list with non-string"""
         with pytest.raises(ValidationError, match="All list items must be strings"):
             GetAssetInfoRequest(asset=["BTC", 123])
+
+
+class TestGetAssetPairsRequest:
+    """Tests for GetAssetPairsRequest schema"""
+
+    def test_minimal_valid_request(self):
+        """Test creating a minimal valid request with no parameters"""
+        pairs_request = GetAssetPairsRequest()
+
+        # Should be valid with all fields None
+        assert pairs_request is not None
+        assert pairs_request.pair is None
+        assert pairs_request.aclass_base is None
+        assert pairs_request.info is None
+        assert pairs_request.country_code is None
+
+    def test_single_pair_parameter(self):
+        """Test request with single pair"""
+        pairs_request = GetAssetPairsRequest(pair="BTC/USD")
+
+        assert pairs_request.pair == "BTC/USD"
+        assert pairs_request.aclass_base is None
+        assert pairs_request.info is None
+        assert pairs_request.country_code is None
+
+    def test_multiple_pairs_parameter(self):
+        """Test request with multiple comma-delimited pairs"""
+        pairs_request = GetAssetPairsRequest(pair="BTC/USD,ETH/BTC,XRP/USD")
+
+        assert pairs_request.pair == "BTC/USD,ETH/BTC,XRP/USD"
+
+    def test_with_aclass_base_currency(self):
+        """Test request with aclass_base filter set to currency"""
+        pairs_request = GetAssetPairsRequest(aclass_base="currency")
+
+        assert pairs_request.aclass_base == "currency"
+        assert pairs_request.pair is None
+
+    def test_with_aclass_base_tokenized_asset(self):
+        """Test request with aclass_base filter set to tokenized_asset"""
+        pairs_request = GetAssetPairsRequest(aclass_base="tokenized_asset")
+
+        assert pairs_request.aclass_base == "tokenized_asset"
+        assert pairs_request.pair is None
+
+    def test_with_info_parameter_info(self):
+        """Test request with info parameter set to 'info'"""
+        pairs_request = GetAssetPairsRequest(info="info")
+
+        assert pairs_request.info == "info"
+
+    def test_with_info_parameter_leverage(self):
+        """Test request with info parameter set to 'leverage'"""
+        pairs_request = GetAssetPairsRequest(info="leverage")
+
+        assert pairs_request.info == "leverage"
+
+    def test_with_info_parameter_fees(self):
+        """Test request with info parameter set to 'fees'"""
+        pairs_request = GetAssetPairsRequest(info="fees")
+
+        assert pairs_request.info == "fees"
+
+    def test_with_info_parameter_margin(self):
+        """Test request with info parameter set to 'margin'"""
+        pairs_request = GetAssetPairsRequest(info="margin")
+
+        assert pairs_request.info == "margin"
+
+    def test_with_country_code_parameter(self):
+        """Test request with country_code parameter"""
+        pairs_request = GetAssetPairsRequest(country_code="GB")
+
+        assert pairs_request.country_code == "GB"
+        assert pairs_request.pair is None
+
+    def test_all_parameters_combined(self):
+        """Test request with all parameters specified"""
+        pairs_request = GetAssetPairsRequest(
+            pair="BTC/USD,ETH/BTC", aclass_base="currency", info="fees", country_code="US"
+        )
+
+        assert pairs_request.pair == "BTC/USD,ETH/BTC"
+        assert pairs_request.aclass_base == "currency"
+        assert pairs_request.info == "fees"
+        assert pairs_request.country_code == "US"
+
+    def test_to_api_dict_method_no_params(self):
+        """Test to_api_dict() serialization with no parameters"""
+        pairs_request = GetAssetPairsRequest()
+
+        data = pairs_request.to_api_dict()
+
+        # Should return empty dict (all None values excluded)
+        assert data == {}
+
+    def test_to_api_dict_method_with_params(self):
+        """Test to_api_dict() serialization with parameters"""
+        pairs_request = GetAssetPairsRequest(pair="BTC/USD", info="leverage")
+
+        data = pairs_request.to_api_dict()
+
+        assert data["pair"] == "BTC/USD"
+        assert data["info"] == "leverage"
+        assert "aclass_base" not in data  # None value excluded
+        assert "country_code" not in data  # None value excluded
+
+    def test_to_api_dict_exclude_none_false(self):
+        """Test to_api_dict() with exclude_none=False"""
+        pairs_request = GetAssetPairsRequest(pair="BTC/USD")
+
+        data = pairs_request.to_api_dict(exclude_none=False)
+
+        assert data["pair"] == "BTC/USD"
+        assert data["aclass_base"] is None
+        assert data["info"] is None
+        assert data["country_code"] is None
+
+    def test_pair_list_input_single_item(self):
+        """Test pair parameter as list with single item"""
+        request = GetAssetPairsRequest(pair=["BTC/USD"])
+
+        assert request.pair == "BTC/USD"
+        data = request.to_api_dict()
+        assert data["pair"] == "BTC/USD"
+
+    def test_pair_list_input_multiple_items(self):
+        """Test pair parameter as list with multiple items"""
+        request = GetAssetPairsRequest(pair=["BTC/USD", "ETH/BTC", "XRP/USD"])
+
+        assert request.pair == "BTC/USD,ETH/BTC,XRP/USD"
+        data = request.to_api_dict()
+        assert data["pair"] == "BTC/USD,ETH/BTC,XRP/USD"
+
+    def test_pair_list_with_whitespace(self):
+        """Test that list items with whitespace are trimmed"""
+        request = GetAssetPairsRequest(pair=[" BTC/USD ", "  ETH/BTC", "XRP/USD  "])
+
+        assert request.pair == "BTC/USD,ETH/BTC,XRP/USD"
+
+    def test_pair_list_duplicate_removal(self):
+        """Test that duplicate pairs are removed while preserving order"""
+        request = GetAssetPairsRequest(
+            pair=["BTC/USD", "ETH/BTC", "BTC/USD", "XRP/USD", "ETH/BTC"]
+        )
+
+        # Should keep first occurrence only
+        assert request.pair == "BTC/USD,ETH/BTC,XRP/USD"
+
+    def test_pair_string_vs_list_equivalence(self):
+        """Test that string and list inputs produce equivalent results"""
+        request_string = GetAssetPairsRequest(pair="BTC/USD,ETH/BTC,XRP/USD")
+        request_list = GetAssetPairsRequest(pair=["BTC/USD", "ETH/BTC", "XRP/USD"])
+
+        assert request_string.pair == request_list.pair
+        assert request_string.to_api_dict() == request_list.to_api_dict()
+
+    def test_pair_list_empty_validation(self):
+        """Test that empty list is rejected"""
+        with pytest.raises(ValidationError) as exc_info:
+            GetAssetPairsRequest(pair=[])
+
+        assert "cannot be empty" in str(exc_info.value).lower()
+
+    def test_pair_list_empty_string_validation(self):
+        """Test that list with empty strings is rejected"""
+        with pytest.raises(ValidationError) as exc_info:
+            GetAssetPairsRequest(pair=["BTC/USD", "", "ETH/BTC"])
+
+        assert (
+            "empty" in str(exc_info.value).lower() or "whitespace" in str(exc_info.value).lower()
+        )
+
+    def test_pair_string_empty_validation(self):
+        """Test that empty string is rejected"""
+        with pytest.raises(ValidationError) as exc_info:
+            GetAssetPairsRequest(pair="")
+
+        assert (
+            "empty" in str(exc_info.value).lower() or "whitespace" in str(exc_info.value).lower()
+        )
+
+    def test_pair_string_whitespace_validation(self):
+        """Test that whitespace-only string is rejected"""
+        with pytest.raises(ValidationError) as exc_info:
+            GetAssetPairsRequest(pair="   ")
+
+        assert (
+            "empty" in str(exc_info.value).lower() or "whitespace" in str(exc_info.value).lower()
+        )
+
+    def test_invalid_info_parameter(self):
+        """Test that invalid info value is rejected"""
+        with pytest.raises(ValidationError):
+            GetAssetPairsRequest(info="invalid")
+
+    def test_invalid_aclass_base_parameter(self):
+        """Test that invalid aclass_base value is rejected"""
+        with pytest.raises(ValidationError):
+            GetAssetPairsRequest(aclass_base="invalid")
+
+    def test_multiple_instances(self):
+        """Test creating multiple GetAssetPairsRequest instances"""
+        requests = [
+            GetAssetPairsRequest(),
+            GetAssetPairsRequest(pair="BTC/USD"),
+            GetAssetPairsRequest(aclass_base="currency"),
+            GetAssetPairsRequest(info="leverage"),
+            GetAssetPairsRequest(country_code="GB"),
+        ]
+
+        assert len(requests) == 5
+        for req in requests:
+            assert req is not None
+
+    def test_various_pair_combinations(self):
+        """Test various pair parameter combinations"""
+        test_cases = [
+            "BTC/USD",
+            "BTC/USD,ETH/BTC",
+            "BTC/USD,ETH/BTC,XRP/USD",
+            "XXBT/ZUSD,XETH/ZUSD",
+            "ADA/USD,ATOM/USD,DOT/USD",
+        ]
+
+        for pairs in test_cases:
+            request = GetAssetPairsRequest(pair=pairs)
+            assert request.pair == pairs
+            data = request.to_api_dict()
+            assert data["pair"] == pairs
+
+    def test_various_country_codes(self):
+        """Test various country code values"""
+        test_cases = ["US", "GB", "DE", "JP", "AU", "CA", "FR"]
+
+        for code in test_cases:
+            request = GetAssetPairsRequest(country_code=code)
+            assert request.country_code == code
+            data = request.to_api_dict()
+            assert data["country_code"] == code
+
+    def test_combined_list_with_other_params(self):
+        """Test pair list combined with other parameters"""
+        request = GetAssetPairsRequest(
+            pair=["BTC/USD", "ETH/BTC"], aclass_base="currency", info="fees", country_code="US"
+        )
+
+        assert request.pair == "BTC/USD,ETH/BTC"
+        assert request.aclass_base == "currency"
+        assert request.info == "fees"
+        assert request.country_code == "US"
+
+        data = request.to_api_dict()
+        assert data["pair"] == "BTC/USD,ETH/BTC"
+        assert data["aclass_base"] == "currency"
+        assert data["info"] == "fees"
+        assert data["country_code"] == "US"
+
+
+class TestGetAssetPairsResponse:
+    """Tests for GetAssetPairs response schemas"""
+
+    def test_asset_pair_info_model_direct_instantiation(self):
+        """Test creating AssetPairInfo model directly"""
+        pair_info = AssetPairInfo(
+            altname="XBTUSDT",
+            wsname="BTC/USDT",
+            aclass_base="currency",
+            base="XXBT",
+            aclass_quote="currency",
+            quote="USDT",
+            pair_decimals=1,
+            cost_decimals=5,
+            lot_decimals=8,
+            lot_multiplier=1,
+            ordermin="0.0001",
+            costmin="0.5",
+            tick_size="0.1",
+            status="online",
+        )
+
+        assert pair_info.altname == "XBTUSDT"
+        assert pair_info.wsname == "BTC/USDT"
+        assert pair_info.aclass_base == "currency"
+        assert pair_info.base == "XXBT"
+        assert pair_info.pair_decimals == 1
+        assert pair_info.status == "online"
+
+    def test_success_response_single_pair(self):
+        """Test parsing a successful response with single pair"""
+        kraken_response = {
+            "error": [],
+            "result": {
+                "XXBTZUSD": {
+                    "altname": "XBTUSDT",
+                    "wsname": "BTC/USD",
+                    "aclass_base": "currency",
+                    "base": "XXBT",
+                    "aclass_quote": "currency",
+                    "quote": "ZUSD",
+                    "pair_decimals": 1,
+                    "cost_decimals": 5,
+                    "lot_decimals": 8,
+                    "lot_multiplier": 1,
+                    "ordermin": "0.0001",
+                    "costmin": "0.5",
+                    "tick_size": "0.1",
+                    "status": "online",
+                }
+            },
+        }
+
+        response = GetAssetPairsResponse.from_response(kraken_response)
+
+        assert response.is_success is True
+        assert response.success is not None
+        assert response.failure is None
+        assert "XXBTZUSD" in response.success.pairs
+        assert response.success.pairs["XXBTZUSD"].altname == "XBTUSDT"
+        assert response.success.pairs["XXBTZUSD"].pair_decimals == 1
+        assert response.success.pairs["XXBTZUSD"].status == "online"
+
+    def test_success_response_multiple_pairs(self):
+        """Test parsing a successful response with multiple pairs"""
+        kraken_response = {
+            "error": [],
+            "result": {
+                "XXBTZUSD": {
+                    "altname": "XBTUSDT",
+                    "wsname": "BTC/USD",
+                    "aclass_base": "currency",
+                    "base": "XXBT",
+                    "aclass_quote": "currency",
+                    "quote": "ZUSD",
+                    "pair_decimals": 1,
+                    "cost_decimals": 5,
+                    "lot_decimals": 8,
+                    "lot_multiplier": 1,
+                    "ordermin": "0.0001",
+                    "costmin": "0.5",
+                    "tick_size": "0.1",
+                    "status": "online",
+                },
+                "XETHZUSD": {
+                    "altname": "ETHUSDT",
+                    "wsname": "ETH/USD",
+                    "aclass_base": "currency",
+                    "base": "XETH",
+                    "aclass_quote": "currency",
+                    "quote": "ZUSD",
+                    "pair_decimals": 2,
+                    "cost_decimals": 5,
+                    "lot_decimals": 8,
+                    "lot_multiplier": 1,
+                    "ordermin": "0.001",
+                    "costmin": "0.5",
+                    "tick_size": "0.01",
+                    "status": "online",
+                },
+            },
+        }
+
+        response = GetAssetPairsResponse.from_response(kraken_response)
+
+        assert response.is_success is True
+        assert len(response.success.pairs) == 2
+        assert "XXBTZUSD" in response.success.pairs
+        assert "XETHZUSD" in response.success.pairs
+
+        # Check XXBTZUSD
+        assert response.success.pairs["XXBTZUSD"].altname == "XBTUSDT"
+        assert response.success.pairs["XXBTZUSD"].pair_decimals == 1
+
+        # Check XETHZUSD
+        assert response.success.pairs["XETHZUSD"].altname == "ETHUSDT"
+        assert response.success.pairs["XETHZUSD"].pair_decimals == 2
+
+    def test_empty_result_response(self):
+        """Test parsing response with no pairs (valid but empty)"""
+        kraken_response = {"error": [], "result": {}}
+
+        response = GetAssetPairsResponse.from_response(kraken_response)
+
+        assert response.is_success is True
+        assert len(response.success.pairs) == 0
+        assert response.success.pairs == {}
+
+    def test_response_with_leverage_info(self):
+        """Test parsing response with leverage information"""
+        kraken_response = {
+            "error": [],
+            "result": {
+                "XXBTZUSD": {
+                    "altname": "XBTUSDT",
+                    "wsname": "BTC/USD",
+                    "aclass_base": "currency",
+                    "base": "XXBT",
+                    "aclass_quote": "currency",
+                    "quote": "ZUSD",
+                    "pair_decimals": 1,
+                    "cost_decimals": 5,
+                    "lot_decimals": 8,
+                    "lot_multiplier": 1,
+                    "leverage_buy": [2, 3, 4, 5],
+                    "leverage_sell": [2, 3, 4, 5],
+                    "ordermin": "0.0001",
+                    "costmin": "0.5",
+                    "tick_size": "0.1",
+                    "status": "online",
+                }
+            },
+        }
+
+        response = GetAssetPairsResponse.from_response(kraken_response)
+
+        assert response.is_success is True
+        assert response.success.pairs["XXBTZUSD"].leverage_buy == [2, 3, 4, 5]
+        assert response.success.pairs["XXBTZUSD"].leverage_sell == [2, 3, 4, 5]
+
+    def test_response_with_fee_info(self):
+        """Test parsing response with fee information"""
+        kraken_response = {
+            "error": [],
+            "result": {
+                "XXBTZUSD": {
+                    "altname": "XBTUSDT",
+                    "wsname": "BTC/USD",
+                    "aclass_base": "currency",
+                    "base": "XXBT",
+                    "aclass_quote": "currency",
+                    "quote": "ZUSD",
+                    "pair_decimals": 1,
+                    "cost_decimals": 5,
+                    "lot_decimals": 8,
+                    "lot_multiplier": 1,
+                    "fees": [[0, 0.26], [50000, 0.24], [100000, 0.22]],
+                    "fees_maker": [[0, 0.16], [50000, 0.14], [100000, 0.12]],
+                    "fee_volume_currency": "ZUSD",
+                    "ordermin": "0.0001",
+                    "costmin": "0.5",
+                    "tick_size": "0.1",
+                    "status": "online",
+                }
+            },
+        }
+
+        response = GetAssetPairsResponse.from_response(kraken_response)
+
+        assert response.is_success is True
+        assert response.success.pairs["XXBTZUSD"].fees == [
+            [0, 0.26],
+            [50000, 0.24],
+            [100000, 0.22],
+        ]
+        assert response.success.pairs["XXBTZUSD"].fees_maker == [
+            [0, 0.16],
+            [50000, 0.14],
+            [100000, 0.12],
+        ]
+        assert response.success.pairs["XXBTZUSD"].fee_volume_currency == "ZUSD"
+
+    def test_response_with_margin_info(self):
+        """Test parsing response with margin information"""
+        kraken_response = {
+            "error": [],
+            "result": {
+                "XXBTZUSD": {
+                    "altname": "XBTUSDT",
+                    "wsname": "BTC/USD",
+                    "aclass_base": "currency",
+                    "base": "XXBT",
+                    "aclass_quote": "currency",
+                    "quote": "ZUSD",
+                    "pair_decimals": 1,
+                    "cost_decimals": 5,
+                    "lot_decimals": 8,
+                    "lot_multiplier": 1,
+                    "margin_call": 80,
+                    "margin_stop": 40,
+                    "ordermin": "0.0001",
+                    "costmin": "0.5",
+                    "tick_size": "0.1",
+                    "status": "online",
+                }
+            },
+        }
+
+        response = GetAssetPairsResponse.from_response(kraken_response)
+
+        assert response.is_success is True
+        assert response.success.pairs["XXBTZUSD"].margin_call == 80
+        assert response.success.pairs["XXBTZUSD"].margin_stop == 40
+
+    def test_response_with_position_limits(self):
+        """Test parsing response with position limits"""
+        kraken_response = {
+            "error": [],
+            "result": {
+                "XXBTZUSD": {
+                    "altname": "XBTUSDT",
+                    "wsname": "BTC/USD",
+                    "aclass_base": "currency",
+                    "base": "XXBT",
+                    "aclass_quote": "currency",
+                    "quote": "ZUSD",
+                    "pair_decimals": 1,
+                    "cost_decimals": 5,
+                    "lot_decimals": 8,
+                    "lot_multiplier": 1,
+                    "long_position_limit": 500,
+                    "short_position_limit": 250,
+                    "ordermin": "0.0001",
+                    "costmin": "0.5",
+                    "tick_size": "0.1",
+                    "status": "online",
+                }
+            },
+        }
+
+        response = GetAssetPairsResponse.from_response(kraken_response)
+
+        assert response.is_success is True
+        assert response.success.pairs["XXBTZUSD"].long_position_limit == 500
+        assert response.success.pairs["XXBTZUSD"].short_position_limit == 250
+
+    def test_various_status_values(self):
+        """Test pairs with different status values"""
+        statuses = ["online", "cancel_only", "post_only", "limit_only", "reduce_only"]
+
+        for status in statuses:
+            kraken_response = {
+                "error": [],
+                "result": {
+                    "TESTPAIR": {
+                        "altname": "TEST",
+                        "aclass_base": "currency",
+                        "base": "TEST",
+                        "aclass_quote": "currency",
+                        "quote": "USD",
+                        "pair_decimals": 2,
+                        "cost_decimals": 5,
+                        "lot_decimals": 8,
+                        "lot_multiplier": 1,
+                        "ordermin": "0.01",
+                        "costmin": "1.0",
+                        "tick_size": "0.01",
+                        "status": status,
+                    }
+                },
+            }
+
+            response = GetAssetPairsResponse.from_response(kraken_response)
+            assert response.is_success is True
+            assert response.success.pairs["TESTPAIR"].status == status
+
+    def test_error_response_parsing(self):
+        """Test parsing an error response"""
+        kraken_response = {
+            "error": ["EGeneral:Internal error"],
+        }
+
+        response = GetAssetPairsResponse.from_response(kraken_response)
+
+        assert response.is_success is False
+        assert response.success is None
+        assert response.failure is not None
+        assert "EGeneral:Internal error" in response.failure.error
+
+    def test_multiple_errors(self):
+        """Test parsing response with multiple errors"""
+        kraken_response = {
+            "error": [
+                "EGeneral:Internal error",
+                "EAPI:Rate limit exceeded",
+            ],
+        }
+
+        response = GetAssetPairsResponse.from_response(kraken_response)
+
+        assert response.is_success is False
+        assert len(response.failure.error) == 2
+        assert "EGeneral:Internal error" in response.failure.error
+        assert "EAPI:Rate limit exceeded" in response.failure.error
+
+    def test_from_json_string(self):
+        """Test parsing from JSON string"""
+        json_response = json.dumps(
+            {
+                "error": [],
+                "result": {
+                    "XXBTZUSD": {
+                        "altname": "XBTUSDT",
+                        "wsname": "BTC/USD",
+                        "aclass_base": "currency",
+                        "base": "XXBT",
+                        "aclass_quote": "currency",
+                        "quote": "ZUSD",
+                        "pair_decimals": 1,
+                        "cost_decimals": 5,
+                        "lot_decimals": 8,
+                        "lot_multiplier": 1,
+                        "ordermin": "0.0001",
+                        "costmin": "0.5",
+                        "tick_size": "0.1",
+                        "status": "online",
+                    }
+                },
+            }
+        )
+
+        response = GetAssetPairsResponse.from_response(json_response)
+
+        assert response.is_success is True
+        assert "XXBTZUSD" in response.success.pairs
+        assert response.success.pairs["XXBTZUSD"].altname == "XBTUSDT"
+
+    def test_invalid_response_format(self):
+        """Test that invalid response format raises appropriate error"""
+        invalid_response = {"error": []}  # Missing 'result'
+
+        with pytest.raises(ValueError, match="missing 'result'"):
+            GetAssetPairsResponse.from_response(invalid_response)
+
+    def test_success_model_direct_instantiation(self):
+        """Test creating GetAssetPairsSuccess directly"""
+        pair1 = AssetPairInfo(
+            altname="XBTUSDT",
+            aclass_base="currency",
+            base="XXBT",
+            aclass_quote="currency",
+            quote="ZUSD",
+            pair_decimals=1,
+            cost_decimals=5,
+            lot_decimals=8,
+            lot_multiplier=1,
+            ordermin="0.0001",
+            costmin="0.5",
+            tick_size="0.1",
+            status="online",
+        )
+        pair2 = AssetPairInfo(
+            altname="ETHUSDT",
+            aclass_base="currency",
+            base="XETH",
+            aclass_quote="currency",
+            quote="ZUSD",
+            pair_decimals=2,
+            cost_decimals=5,
+            lot_decimals=8,
+            lot_multiplier=1,
+            ordermin="0.001",
+            costmin="0.5",
+            tick_size="0.01",
+            status="online",
+        )
+
+        success = GetAssetPairsSuccess(pairs={"XXBTZUSD": pair1, "XETHZUSD": pair2})
+
+        assert len(success.pairs) == 2
+        assert success.pairs["XXBTZUSD"].altname == "XBTUSDT"
+        assert success.pairs["XETHZUSD"].altname == "ETHUSDT"
+
+    def test_asset_pair_info_missing_fields_validation(self):
+        """Test that AssetPairInfo validates required fields"""
+        with pytest.raises(ValidationError):
+            AssetPairInfo(altname="TEST", base="TEST")  # Missing many required fields
+
+    def test_response_wrapper_direct_instantiation(self):
+        """Test creating GetAssetPairsResponse wrapper directly"""
+        pair = AssetPairInfo(
+            altname="XBTUSDT",
+            aclass_base="currency",
+            base="XXBT",
+            aclass_quote="currency",
+            quote="ZUSD",
+            pair_decimals=1,
+            cost_decimals=5,
+            lot_decimals=8,
+            lot_multiplier=1,
+            ordermin="0.0001",
+            costmin="0.5",
+            tick_size="0.1",
+            status="online",
+        )
+        success = GetAssetPairsSuccess(pairs={"XXBTZUSD": pair})
+        response = GetAssetPairsResponse(success=success)
+
+        assert response.is_success is True
+        assert "XXBTZUSD" in response.success.pairs
+
+        from kraken.rest.schema.base import ResponseErrorSchema
+
+        error = ResponseErrorSchema(error=["Test error"])
+        response2 = GetAssetPairsResponse(failure=error)
+
+        assert response2.is_success is False
+        assert response2.failure.error[0] == "Test error"
+
+    def test_dictionary_access_patterns(self):
+        """Test various dictionary access patterns on pairs"""
+        kraken_response = {
+            "error": [],
+            "result": {
+                "XXBTZUSD": {
+                    "altname": "XBTUSDT",
+                    "aclass_base": "currency",
+                    "base": "XXBT",
+                    "aclass_quote": "currency",
+                    "quote": "ZUSD",
+                    "pair_decimals": 1,
+                    "cost_decimals": 5,
+                    "lot_decimals": 8,
+                    "lot_multiplier": 1,
+                    "ordermin": "0.0001",
+                    "costmin": "0.5",
+                    "tick_size": "0.1",
+                    "status": "online",
+                },
+                "XETHZUSD": {
+                    "altname": "ETHUSDT",
+                    "aclass_base": "currency",
+                    "base": "XETH",
+                    "aclass_quote": "currency",
+                    "quote": "ZUSD",
+                    "pair_decimals": 2,
+                    "cost_decimals": 5,
+                    "lot_decimals": 8,
+                    "lot_multiplier": 1,
+                    "ordermin": "0.001",
+                    "costmin": "0.5",
+                    "tick_size": "0.01",
+                    "status": "online",
+                },
+            },
+        }
+
+        response = GetAssetPairsResponse.from_response(kraken_response)
+
+        # Test dict access
+        assert "XXBTZUSD" in response.success.pairs
+        assert "XETHZUSD" in response.success.pairs
+        assert "INVALID" not in response.success.pairs
+
+        # Test iteration
+        pair_names = list(response.success.pairs.keys())
+        assert "XXBTZUSD" in pair_names
+        assert "XETHZUSD" in pair_names
+
+        # Test values
+        for pair_info in response.success.pairs.values():
+            assert isinstance(pair_info, AssetPairInfo)
+
+    def test_many_pairs_response(self):
+        """Test response with many pairs (simulating full pair list)"""
+        # Create a response with 50 different pairs
+        result = {}
+        for i in range(50):
+            result[f"PAIR{i}"] = {
+                "altname": f"P{i}",
+                "aclass_base": "currency",
+                "base": f"BASE{i}",
+                "aclass_quote": "currency",
+                "quote": "USD",
+                "pair_decimals": 1 + (i % 3),
+                "cost_decimals": 4 + (i % 3),
+                "lot_decimals": 8,
+                "lot_multiplier": 1,
+                "ordermin": "0.001",
+                "costmin": "0.5",
+                "tick_size": "0.01",
+                "status": "online",
+            }
+
+        kraken_response = {"error": [], "result": result}
+
+        response = GetAssetPairsResponse.from_response(kraken_response)
+
+        assert response.is_success is True
+        assert len(response.success.pairs) == 50
+
+        # Verify a few samples
+        assert response.success.pairs["PAIR0"].altname == "P0"
+        assert response.success.pairs["PAIR25"].altname == "P25"
+        assert response.success.pairs["PAIR49"].altname == "P49"
