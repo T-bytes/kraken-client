@@ -7,6 +7,10 @@ import pytest
 from pydantic import ValidationError
 
 from kraken.rest.schema.market import (
+    AssetInfo,
+    GetAssetInfoRequest,
+    GetAssetInfoResponse,
+    GetAssetInfoSuccess,
     GetServerTimeRequest,
     GetServerTimeResponse,
     GetServerTimeSuccess,
@@ -3907,3 +3911,885 @@ class TestGetSystemStatusResponse:
                     status=invalid_status,
                     timestamp="2021-03-22T17:18:03Z",
                 )
+
+
+class TestGetAssetInfoRequest:
+    """Tests for GetAssetInfoRequest schema"""
+
+    def test_minimal_valid_request(self):
+        """Test creating a minimal valid request with no parameters"""
+        asset_info_request = GetAssetInfoRequest()
+
+        # Should be valid with all fields None
+        assert asset_info_request is not None
+        assert asset_info_request.asset is None
+        assert asset_info_request.aclass is None
+
+    def test_single_asset_parameter(self):
+        """Test request with single asset"""
+        asset_info_request = GetAssetInfoRequest(asset="XBT")
+
+        assert asset_info_request.asset == "XBT"
+        assert asset_info_request.aclass is None
+
+    def test_multiple_assets_parameter(self):
+        """Test request with multiple comma-delimited assets"""
+        asset_info_request = GetAssetInfoRequest(asset="XBT,ETH,USD")
+
+        assert asset_info_request.asset == "XBT,ETH,USD"
+
+    def test_with_aclass_parameter(self):
+        """Test request with asset class filter"""
+        asset_info_request = GetAssetInfoRequest(aclass="currency")
+
+        assert asset_info_request.aclass == "currency"
+        assert asset_info_request.asset is None
+
+    def test_with_aclass_parameter(self):
+        """Test request with aclass parameter"""
+        asset_info_request = GetAssetInfoRequest(aclass="currency")
+
+        assert asset_info_request.aclass == "currency"
+        assert asset_info_request.asset is None
+
+    def test_all_parameters_combined(self):
+        """Test request with all parameters specified"""
+        asset_info_request = GetAssetInfoRequest(asset="XBT,ETH", aclass="currency")
+
+        assert asset_info_request.asset == "XBT,ETH"
+        assert asset_info_request.aclass == "currency"
+
+    def test_to_api_dict_method_no_params(self):
+        """Test to_api_dict() serialization with no parameters"""
+        asset_info_request = GetAssetInfoRequest()
+
+        # to_api_dict() should exclude None values by default
+        data = asset_info_request.to_api_dict()
+
+        # Should return empty dict (all None values excluded)
+        assert data == {}
+
+    def test_to_api_dict_method_with_params(self):
+        """Test to_api_dict() serialization with parameters"""
+        asset_info_request = GetAssetInfoRequest(asset="XBT,ETH", aclass="currency")
+
+        data = asset_info_request.to_api_dict()
+
+        assert data["asset"] == "XBT,ETH"
+        assert data["aclass"] == "currency"
+        assert "info" not in data  # None value excluded
+
+    def test_to_api_dict_exclude_none_false(self):
+        """Test to_api_dict() with exclude_none=False"""
+        asset_info_request = GetAssetInfoRequest(asset="XBT")
+
+        data = asset_info_request.to_api_dict(exclude_none=False)
+
+        assert data["asset"] == "XBT"
+        assert data["aclass"] is None
+
+    def test_multiple_instances(self):
+        """Test creating multiple GetAssetInfoRequest instances"""
+        requests = [
+            GetAssetInfoRequest(),
+            GetAssetInfoRequest(asset="XBT"),
+            GetAssetInfoRequest(aclass="currency"),
+            GetAssetInfoRequest(asset="ETH", aclass="currency"),
+        ]
+
+        assert len(requests) == 4
+        for req in requests:
+            assert req is not None
+
+    def test_various_asset_combinations(self):
+        """Test various asset parameter combinations"""
+        test_cases = [
+            "XBT",
+            "XBT,ETH",
+            "XBT,ETH,USD",
+            "XXBT,ZUSD",
+            "ADA,ATOM,DOT",
+        ]
+
+        for assets in test_cases:
+            request = GetAssetInfoRequest(asset=assets)
+            assert request.asset == assets
+            data = request.to_api_dict()
+            assert data["asset"] == assets
+
+    def test_asset_list_input_single_item(self):
+        """Test asset parameter as list with single item"""
+        request = GetAssetInfoRequest(asset=["XBT"])
+
+        assert request.asset == "XBT"
+        data = request.to_api_dict()
+        assert data["asset"] == "XBT"
+
+    def test_asset_list_input_multiple_items(self):
+        """Test asset parameter as list with multiple items"""
+        request = GetAssetInfoRequest(asset=["XBT", "ETH", "USD"])
+
+        assert request.asset == "XBT,ETH,USD"
+        data = request.to_api_dict()
+        assert data["asset"] == "XBT,ETH,USD"
+
+    def test_asset_list_with_whitespace(self):
+        """Test that list items with whitespace are trimmed"""
+        request = GetAssetInfoRequest(asset=[" XBT ", "  ETH", "USD  "])
+
+        assert request.asset == "XBT,ETH,USD"
+
+    def test_asset_list_duplicate_removal(self):
+        """Test that duplicate assets are removed while preserving order"""
+        request = GetAssetInfoRequest(asset=["XBT", "ETH", "XBT", "USD", "ETH"])
+
+        # Should keep first occurrence only
+        assert request.asset == "XBT,ETH,USD"
+
+    def test_asset_list_with_duplicates_case_sensitive(self):
+        """Test that duplicate removal is case-sensitive"""
+        request = GetAssetInfoRequest(asset=["XBT", "xbt", "ETH"])
+
+        # Different cases are treated as different assets
+        assert request.asset == "XBT,xbt,ETH"
+
+    def test_asset_string_vs_list_equivalence(self):
+        """Test that string and list inputs produce equivalent results"""
+        request_string = GetAssetInfoRequest(asset="XBT,ETH,USD")
+        request_list = GetAssetInfoRequest(asset=["XBT", "ETH", "USD"])
+
+        assert request_string.asset == request_list.asset
+        assert request_string.to_api_dict() == request_list.to_api_dict()
+
+    def test_asset_list_empty_validation(self):
+        """Test that empty list is rejected"""
+        with pytest.raises(ValidationError) as exc_info:
+            GetAssetInfoRequest(asset=[])
+
+        assert "cannot be empty" in str(exc_info.value).lower()
+
+    def test_asset_list_empty_string_validation(self):
+        """Test that list with empty strings is rejected"""
+        with pytest.raises(ValidationError) as exc_info:
+            GetAssetInfoRequest(asset=["XBT", "", "ETH"])
+
+        assert (
+            "empty" in str(exc_info.value).lower() or "whitespace" in str(exc_info.value).lower()
+        )
+
+    def test_asset_list_whitespace_only_validation(self):
+        """Test that list with whitespace-only strings is rejected"""
+        with pytest.raises(ValidationError) as exc_info:
+            GetAssetInfoRequest(asset=["XBT", "   ", "ETH"])
+
+        assert (
+            "empty" in str(exc_info.value).lower() or "whitespace" in str(exc_info.value).lower()
+        )
+
+    def test_asset_list_non_string_validation(self):
+        """Test that list with non-string items is rejected"""
+        with pytest.raises(ValidationError) as exc_info:
+            GetAssetInfoRequest(asset=["XBT", 123, "ETH"])
+
+        assert "string" in str(exc_info.value).lower()
+
+    def test_asset_string_empty_validation(self):
+        """Test that empty string is rejected"""
+        with pytest.raises(ValidationError) as exc_info:
+            GetAssetInfoRequest(asset="")
+
+        assert (
+            "empty" in str(exc_info.value).lower() or "whitespace" in str(exc_info.value).lower()
+        )
+
+    def test_asset_string_whitespace_validation(self):
+        """Test that whitespace-only string is rejected"""
+        with pytest.raises(ValidationError) as exc_info:
+            GetAssetInfoRequest(asset="   ")
+
+        assert (
+            "empty" in str(exc_info.value).lower() or "whitespace" in str(exc_info.value).lower()
+        )
+
+    def test_asset_string_with_whitespace_trimmed(self):
+        """Test that string with leading/trailing whitespace is trimmed"""
+        request = GetAssetInfoRequest(asset="  XBT,ETH,USD  ")
+
+        assert request.asset == "XBT,ETH,USD"
+
+    def test_asset_invalid_type_validation(self):
+        """Test that invalid types are rejected"""
+        invalid_values = [123, 45.67, True, {"XBT": "BTC"}, (("XBT", "ETH"))]
+
+        for invalid_value in invalid_values:
+            with pytest.raises(ValidationError):
+                GetAssetInfoRequest(asset=invalid_value)
+
+    def test_asset_list_many_items(self):
+        """Test list with many asset items"""
+        assets = [f"ASSET{i}" for i in range(20)]
+        request = GetAssetInfoRequest(asset=assets)
+
+        expected = ",".join(assets)
+        assert request.asset == expected
+
+    def test_asset_list_with_common_assets(self):
+        """Test list with realistic asset names"""
+        common_assets = ["BTC", "ETH", "USDT", "USDC", "XRP", "ADA", "SOL", "DOT"]
+        request = GetAssetInfoRequest(asset=common_assets)
+
+        assert request.asset == "BTC,ETH,USDT,USDC,XRP,ADA,SOL,DOT"
+
+    def test_asset_list_order_preservation(self):
+        """Test that list order is preserved in conversion"""
+        request = GetAssetInfoRequest(asset=["USD", "XBT", "ETH", "ADA"])
+
+        # Order should be preserved
+        assert request.asset == "USD,XBT,ETH,ADA"
+
+    def test_combined_list_with_other_params(self):
+        """Test asset list combined with other parameters"""
+        request = GetAssetInfoRequest(asset=["XBT", "ETH"], aclass="currency")
+
+        assert request.asset == "XBT,ETH"
+        assert request.aclass == "currency"
+
+        data = request.to_api_dict()
+        assert data["asset"] == "XBT,ETH"
+        assert data["aclass"] == "currency"
+
+
+class TestGetAssetInfoResponse:
+    """Tests for GetAssetInfo response schemas"""
+
+    def test_asset_info_model_direct_instantiation(self):
+        """Test creating AssetInfo model directly"""
+        asset_info = AssetInfo(
+            aclass="currency", altname="BTC", decimals=10, display_decimals=5, status="enabled"
+        )
+
+        assert asset_info.aclass == "currency"
+        assert asset_info.altname == "BTC"
+        assert asset_info.decimals == 10
+        assert asset_info.display_decimals == 5
+
+    def test_success_response_single_asset(self):
+        """Test parsing a successful response with single asset"""
+        kraken_response = {
+            "error": [],
+            "result": {
+                "XXBT": {
+                    "aclass": "currency",
+                    "altname": "XBT",
+                    "decimals": 10,
+                    "display_decimals": 5,
+                    "status": "enabled",
+                }
+            },
+        }
+
+        response = GetAssetInfoResponse.from_response(kraken_response)
+
+        assert response.is_success is True
+        assert response.success is not None
+        assert response.failure is None
+        assert "XXBT" in response.success.assets
+        assert response.success.assets["XXBT"].altname == "XBT"
+        assert response.success.assets["XXBT"].decimals == 10
+        assert response.success.assets["XXBT"].display_decimals == 5
+
+    def test_success_response_multiple_assets(self):
+        """Test parsing a successful response with multiple assets"""
+        kraken_response = {
+            "error": [],
+            "result": {
+                "XXBT": {
+                    "aclass": "currency",
+                    "altname": "XBT",
+                    "decimals": 10,
+                    "display_decimals": 5,
+                    "status": "enabled",
+                },
+                "ZUSD": {
+                    "aclass": "currency",
+                    "altname": "USD",
+                    "decimals": 4,
+                    "display_decimals": 2,
+                    "status": "enabled",
+                },
+                "XETH": {
+                    "aclass": "currency",
+                    "altname": "ETH",
+                    "decimals": 10,
+                    "display_decimals": 5,
+                    "status": "enabled",
+                },
+            },
+        }
+
+        response = GetAssetInfoResponse.from_response(kraken_response)
+
+        assert response.is_success is True
+        assert len(response.success.assets) == 3
+        assert "XXBT" in response.success.assets
+        assert "ZUSD" in response.success.assets
+        assert "XETH" in response.success.assets
+
+        # Check XXBT
+        assert response.success.assets["XXBT"].altname == "XBT"
+        assert response.success.assets["XXBT"].decimals == 10
+
+        # Check ZUSD
+        assert response.success.assets["ZUSD"].altname == "USD"
+        assert response.success.assets["ZUSD"].decimals == 4
+        assert response.success.assets["ZUSD"].display_decimals == 2
+
+        # Check XETH
+        assert response.success.assets["XETH"].altname == "ETH"
+
+    def test_empty_result_response(self):
+        """Test parsing response with no assets (valid but empty)"""
+        kraken_response = {"error": [], "result": {}}
+
+        response = GetAssetInfoResponse.from_response(kraken_response)
+
+        assert response.is_success is True
+        assert len(response.success.assets) == 0
+        assert response.success.assets == {}
+
+    def test_various_decimal_values(self):
+        """Test assets with different decimal precision values"""
+        kraken_response = {
+            "error": [],
+            "result": {
+                "XXBT": {
+                    "aclass": "currency",
+                    "altname": "XBT",
+                    "decimals": 10,
+                    "display_decimals": 5,
+                    "status": "enabled",
+                },
+                "ZUSD": {
+                    "aclass": "currency",
+                    "altname": "USD",
+                    "decimals": 4,
+                    "display_decimals": 2,
+                    "status": "enabled",
+                },
+                "ADA": {
+                    "aclass": "currency",
+                    "altname": "ADA",
+                    "decimals": 8,
+                    "display_decimals": 6,
+                    "status": "enabled",
+                },
+            },
+        }
+
+        response = GetAssetInfoResponse.from_response(kraken_response)
+
+        assert response.is_success is True
+        assert response.success.assets["XXBT"].decimals == 10
+        assert response.success.assets["ZUSD"].decimals == 4
+        assert response.success.assets["ADA"].decimals == 8
+
+    def test_error_response_parsing(self):
+        """Test parsing an error response"""
+        kraken_response = {
+            "error": ["EGeneral:Internal error"],
+        }
+
+        response = GetAssetInfoResponse.from_response(kraken_response)
+
+        assert response.is_success is False
+        assert response.success is None
+        assert response.failure is not None
+        assert "EGeneral:Internal error" in response.failure.error
+
+    def test_multiple_errors(self):
+        """Test parsing response with multiple errors"""
+        kraken_response = {
+            "error": [
+                "EGeneral:Internal error",
+                "EAPI:Rate limit exceeded",
+            ],
+        }
+
+        response = GetAssetInfoResponse.from_response(kraken_response)
+
+        assert response.is_success is False
+        assert len(response.failure.error) == 2
+        assert "EGeneral:Internal error" in response.failure.error
+        assert "EAPI:Rate limit exceeded" in response.failure.error
+
+    def test_from_json_string(self):
+        """Test parsing from JSON string"""
+        json_response = json.dumps(
+            {
+                "error": [],
+                "result": {
+                    "XXBT": {
+                        "aclass": "currency",
+                        "altname": "XBT",
+                        "decimals": 10,
+                        "display_decimals": 5,
+                        "status": "enabled",
+                    }
+                },
+            }
+        )
+
+        response = GetAssetInfoResponse.from_response(json_response)
+
+        assert response.is_success is True
+        assert "XXBT" in response.success.assets
+        assert response.success.assets["XXBT"].altname == "XBT"
+
+    def test_invalid_response_format(self):
+        """Test that invalid response format raises appropriate error"""
+        invalid_response = {"error": []}  # Missing 'result'
+
+        with pytest.raises(ValueError, match="missing 'result'"):
+            GetAssetInfoResponse.from_response(invalid_response)
+
+    def test_success_model_direct_instantiation(self):
+        """Test creating GetAssetInfoSuccess directly"""
+        asset1 = AssetInfo(
+            aclass="currency", altname="BTC", decimals=10, display_decimals=5, status="enabled"
+        )
+        asset2 = AssetInfo(
+            aclass="currency", altname="USD", decimals=4, display_decimals=2, status="enabled"
+        )
+
+        success = GetAssetInfoSuccess(assets={"XXBT": asset1, "ZUSD": asset2})
+
+        assert len(success.assets) == 2
+        assert success.assets["XXBT"].altname == "BTC"
+        assert success.assets["ZUSD"].altname == "USD"
+
+    def test_asset_info_field_types(self):
+        """Test that AssetInfo field types are enforced"""
+        asset_info = AssetInfo(
+            aclass="currency", altname="BTC", decimals=10, display_decimals=5, status="enabled"
+        )
+
+        assert isinstance(asset_info.aclass, str)
+        assert isinstance(asset_info.altname, str)
+        assert isinstance(asset_info.decimals, int)
+        assert isinstance(asset_info.display_decimals, int)
+
+    def test_asset_info_missing_fields_validation(self):
+        """Test that AssetInfo validates required fields"""
+        with pytest.raises(ValidationError):
+            AssetInfo(aclass="currency", altname="BTC")  # Missing decimals fields
+
+    def test_response_wrapper_direct_instantiation(self):
+        """Test creating GetAssetInfoResponse wrapper directly"""
+        asset = AssetInfo(
+            aclass="currency", altname="BTC", decimals=10, display_decimals=5, status="enabled"
+        )
+        success = GetAssetInfoSuccess(assets={"XXBT": asset})
+        response = GetAssetInfoResponse(success=success)
+
+        assert response.is_success is True
+        assert "XXBT" in response.success.assets
+
+        from kraken.rest.schema.base import ResponseErrorSchema
+
+        error = ResponseErrorSchema(error=["Test error"])
+        response2 = GetAssetInfoResponse(failure=error)
+
+        assert response2.is_success is False
+        assert response2.failure.error[0] == "Test error"
+
+    def test_dictionary_access_patterns(self):
+        """Test various dictionary access patterns on assets"""
+        kraken_response = {
+            "error": [],
+            "result": {
+                "XXBT": {
+                    "aclass": "currency",
+                    "altname": "XBT",
+                    "decimals": 10,
+                    "display_decimals": 5,
+                    "status": "enabled",
+                },
+                "ZUSD": {
+                    "aclass": "currency",
+                    "altname": "USD",
+                    "decimals": 4,
+                    "display_decimals": 2,
+                    "status": "enabled",
+                },
+            },
+        }
+
+        response = GetAssetInfoResponse.from_response(kraken_response)
+
+        # Test dict access
+        assert "XXBT" in response.success.assets
+        assert "ZUSD" in response.success.assets
+        assert "INVALID" not in response.success.assets
+
+        # Test iteration
+        asset_names = list(response.success.assets.keys())
+        assert "XXBT" in asset_names
+        assert "ZUSD" in asset_names
+
+        # Test values
+        for asset_info in response.success.assets.values():
+            assert isinstance(asset_info, AssetInfo)
+
+    def test_concurrent_response_parsing(self):
+        """Test concurrent parsing of multiple responses"""
+        import concurrent.futures
+
+        def parse_response(i):
+            kraken_response = {
+                "error": [],
+                "result": {
+                    f"ASSET{i}": {
+                        "aclass": "currency",
+                        "altname": f"A{i}",
+                        "decimals": 10,
+                        "display_decimals": 5,
+                        "status": "enabled",
+                    }
+                },
+            }
+            return GetAssetInfoResponse.from_response(kraken_response)
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            responses = list(executor.map(parse_response, range(20)))
+
+        assert len(responses) == 20
+        for i, resp in enumerate(responses):
+            assert resp.is_success is True
+            assert f"ASSET{i}" in resp.success.assets
+
+    def test_response_immutability(self):
+        """Test that response objects maintain their data correctly"""
+        kraken_response = {
+            "error": [],
+            "result": {
+                "XXBT": {
+                    "aclass": "currency",
+                    "altname": "XBT",
+                    "decimals": 10,
+                    "display_decimals": 5,
+                    "status": "enabled",
+                }
+            },
+        }
+
+        response = GetAssetInfoResponse.from_response(kraken_response)
+
+        # Store original values
+        original_asset_count = len(response.success.assets)
+        original_altname = response.success.assets["XXBT"].altname
+
+        # Values should remain unchanged
+        assert len(response.success.assets) == original_asset_count
+        assert response.success.assets["XXBT"].altname == original_altname
+
+    def test_many_assets_response(self):
+        """Test response with many assets (simulating full asset list)"""
+        # Create a response with 50 different assets
+        result = {}
+        for i in range(50):
+            result[f"ASSET{i}"] = {
+                "aclass": "currency",
+                "altname": f"A{i}",
+                "decimals": 8 + (i % 3),
+                "display_decimals": 4 + (i % 3),
+                "status": "enabled",
+            }
+
+        kraken_response = {"error": [], "result": result}
+
+        response = GetAssetInfoResponse.from_response(kraken_response)
+
+        assert response.is_success is True
+        assert len(response.success.assets) == 50
+
+        # Verify some random assets (0 % 3 = 0, 10 % 3 = 1, 24 % 3 = 0)
+        assert response.success.assets["ASSET0"].decimals == 8
+        assert response.success.assets["ASSET10"].decimals == 9
+        assert response.success.assets["ASSET24"].decimals == 8
+
+    def test_asset_info_decimal_precision_values(self):
+        """Test that various decimal precision values are handled correctly"""
+        test_cases = [
+            {"decimals": 0, "display_decimals": 0},
+            {"decimals": 2, "display_decimals": 2},
+            {"decimals": 4, "display_decimals": 2},
+            {"decimals": 8, "display_decimals": 6},
+            {"decimals": 10, "display_decimals": 5},
+            {"decimals": 18, "display_decimals": 8},
+        ]
+
+        for i, precision in enumerate(test_cases):
+            asset_info = AssetInfo(
+                aclass="currency",
+                altname=f"TEST{i}",
+                decimals=precision["decimals"],
+                display_decimals=precision["display_decimals"],
+                status="enabled",
+            )
+
+            assert asset_info.decimals == precision["decimals"]
+            assert asset_info.display_decimals == precision["display_decimals"]
+
+    def test_altname_variations(self):
+        """Test that various altname formats are accepted"""
+        altnames = ["BTC", "ETH", "USD", "EUR", "ADA", "DOT", "SOL", "MATIC"]
+
+        for i, altname in enumerate(altnames):
+            asset_info = AssetInfo(
+                aclass="currency",
+                altname=altname,
+                decimals=10,
+                display_decimals=5,
+                status="enabled",
+            )
+
+            assert asset_info.altname == altname
+
+
+class TestNormalizeCommaSeperatedListValidator:
+    """Tests for normalize_comma_separated_list validator function"""
+
+    def test_none_input(self):
+        """Test that None input returns None"""
+        from kraken.rest.schema import validators
+
+        result = validators.normalize_comma_separated_list(None)
+        assert result is None
+
+    def test_single_string(self):
+        """Test single string input is returned as-is after stripping"""
+        from kraken.rest.schema import validators
+
+        result = validators.normalize_comma_separated_list("BTC")
+        assert result == "BTC"
+
+    def test_string_with_whitespace(self):
+        """Test that string whitespace is stripped"""
+        from kraken.rest.schema import validators
+
+        result = validators.normalize_comma_separated_list("  BTC  ")
+        assert result == "BTC"
+
+    def test_comma_separated_string(self):
+        """Test comma-separated string is returned after stripping"""
+        from kraken.rest.schema import validators
+
+        result = validators.normalize_comma_separated_list("BTC,ETH")
+        assert result == "BTC,ETH"
+
+    def test_comma_separated_string_with_spaces(self):
+        """Test comma-separated string with extra spaces"""
+        from kraken.rest.schema import validators
+
+        result = validators.normalize_comma_separated_list("  BTC,ETH,USD  ")
+        assert result == "BTC,ETH,USD"
+
+    def test_empty_string_raises_error(self):
+        """Test that empty string raises ValueError"""
+        from kraken.rest.schema import validators
+
+        with pytest.raises(ValueError, match="String cannot be empty or whitespace"):
+            validators.normalize_comma_separated_list("")
+
+    def test_whitespace_only_string_raises_error(self):
+        """Test that whitespace-only string raises ValueError"""
+        from kraken.rest.schema import validators
+
+        with pytest.raises(ValueError, match="String cannot be empty or whitespace"):
+            validators.normalize_comma_separated_list("   ")
+
+    def test_list_with_single_item(self):
+        """Test list with single item is converted to string"""
+        from kraken.rest.schema import validators
+
+        result = validators.normalize_comma_separated_list(["BTC"])
+        assert result == "BTC"
+
+    def test_list_with_multiple_items(self):
+        """Test list with multiple items is converted to comma-separated string"""
+        from kraken.rest.schema import validators
+
+        result = validators.normalize_comma_separated_list(["BTC", "ETH"])
+        assert result == "BTC,ETH"
+
+    def test_list_with_three_items(self):
+        """Test list with three items"""
+        from kraken.rest.schema import validators
+
+        result = validators.normalize_comma_separated_list(["BTC", "ETH", "USD"])
+        assert result == "BTC,ETH,USD"
+
+    def test_list_items_with_whitespace(self):
+        """Test that list items are stripped of whitespace"""
+        from kraken.rest.schema import validators
+
+        result = validators.normalize_comma_separated_list(["  BTC  ", "  ETH  "])
+        assert result == "BTC,ETH"
+
+    def test_list_with_duplicates_removes_duplicates(self):
+        """Test that duplicate items are removed while preserving order"""
+        from kraken.rest.schema import validators
+
+        result = validators.normalize_comma_separated_list(["BTC", "ETH", "BTC"])
+        assert result == "BTC,ETH"
+
+    def test_list_with_multiple_duplicates(self):
+        """Test removal of multiple duplicate items"""
+        from kraken.rest.schema import validators
+
+        result = validators.normalize_comma_separated_list(
+            ["BTC", "ETH", "BTC", "USD", "ETH", "BTC"]
+        )
+        assert result == "BTC,ETH,USD"
+
+    def test_list_duplicate_removal_preserves_order(self):
+        """Test that first occurrence order is preserved when removing duplicates"""
+        from kraken.rest.schema import validators
+
+        result = validators.normalize_comma_separated_list(["ETH", "BTC", "USD", "BTC", "ETH"])
+        assert result == "ETH,BTC,USD"
+
+    def test_empty_list_raises_error(self):
+        """Test that empty list raises ValueError"""
+        from kraken.rest.schema import validators
+
+        with pytest.raises(ValueError, match="List cannot be empty"):
+            validators.normalize_comma_separated_list([])
+
+    def test_list_with_non_string_raises_error(self):
+        """Test that list with non-string item raises ValueError"""
+        from kraken.rest.schema import validators
+
+        with pytest.raises(ValueError, match="All list items must be strings, got int"):
+            validators.normalize_comma_separated_list(["BTC", 123])
+
+    def test_list_with_float_raises_error(self):
+        """Test that list with float item raises ValueError"""
+        from kraken.rest.schema import validators
+
+        with pytest.raises(ValueError, match="All list items must be strings, got float"):
+            validators.normalize_comma_separated_list(["BTC", 3.14])
+
+    def test_list_with_empty_string_raises_error(self):
+        """Test that list with empty string raises ValueError"""
+        from kraken.rest.schema import validators
+
+        with pytest.raises(
+            ValueError, match="List cannot contain empty or whitespace-only strings"
+        ):
+            validators.normalize_comma_separated_list(["BTC", ""])
+
+    def test_list_with_whitespace_only_string_raises_error(self):
+        """Test that list with whitespace-only string raises ValueError"""
+        from kraken.rest.schema import validators
+
+        with pytest.raises(
+            ValueError, match="List cannot contain empty or whitespace-only strings"
+        ):
+            validators.normalize_comma_separated_list(["BTC", "   "])
+
+    def test_invalid_type_raises_error(self):
+        """Test that invalid type raises ValueError"""
+        from kraken.rest.schema import validators
+
+        with pytest.raises(ValueError, match="Must be a string, list, or None, got int"):
+            validators.normalize_comma_separated_list(123)
+
+    def test_dict_raises_error(self):
+        """Test that dict type raises ValueError"""
+        from kraken.rest.schema import validators
+
+        with pytest.raises(ValueError, match="Must be a string, list, or None, got dict"):
+            validators.normalize_comma_separated_list({"BTC": "Bitcoin"})
+
+    def test_tuple_raises_error(self):
+        """Test that tuple type raises ValueError"""
+        from kraken.rest.schema import validators
+
+        with pytest.raises(ValueError, match="Must be a string, list, or None, got tuple"):
+            validators.normalize_comma_separated_list(("BTC", "ETH"))
+
+    def test_set_raises_error(self):
+        """Test that set type raises ValueError"""
+        from kraken.rest.schema import validators
+
+        with pytest.raises(ValueError, match="Must be a string, list, or None, got set"):
+            validators.normalize_comma_separated_list({"BTC", "ETH"})
+
+    def test_various_asset_names(self):
+        """Test with various realistic asset names"""
+        from kraken.rest.schema import validators
+
+        test_cases = [
+            (["XBT", "ETH", "USD"], "XBT,ETH,USD"),
+            (["XXBT", "XETH", "ZUSD"], "XXBT,XETH,ZUSD"),
+            (["BTC", "ETH", "ADA", "DOT"], "BTC,ETH,ADA,DOT"),
+        ]
+
+        for input_list, expected in test_cases:
+            result = validators.normalize_comma_separated_list(input_list)
+            assert result == expected
+
+    def test_case_sensitivity_preserved(self):
+        """Test that case sensitivity is preserved"""
+        from kraken.rest.schema import validators
+
+        result = validators.normalize_comma_separated_list(["btc", "BTC", "Btc"])
+        # All three are different strings, so all should be preserved
+        assert result == "btc,BTC,Btc"
+
+    def test_long_list(self):
+        """Test with a longer list of items"""
+        from kraken.rest.schema import validators
+
+        items = [f"ASSET{i}" for i in range(20)]
+        result = validators.normalize_comma_separated_list(items)
+        expected = ",".join(items)
+        assert result == expected
+
+    def test_integration_with_get_asset_info_request(self):
+        """Test integration with GetAssetInfoRequest schema"""
+        # Test with string
+        request1 = GetAssetInfoRequest(asset="BTC")
+        assert request1.asset == "BTC"
+
+        # Test with comma-separated string
+        request2 = GetAssetInfoRequest(asset="BTC,ETH")
+        assert request2.asset == "BTC,ETH"
+
+        # Test with list
+        request3 = GetAssetInfoRequest(asset=["BTC", "ETH"])
+        assert request3.asset == "BTC,ETH"
+
+        # Test with None
+        request4 = GetAssetInfoRequest(asset=None)
+        assert request4.asset is None
+
+        # Test with list containing duplicates
+        request5 = GetAssetInfoRequest(asset=["BTC", "ETH", "BTC"])
+        assert request5.asset == "BTC,ETH"
+
+    def test_integration_empty_string_error(self):
+        """Test that GetAssetInfoRequest raises error for empty string"""
+        with pytest.raises(ValidationError, match="String cannot be empty or whitespace"):
+            GetAssetInfoRequest(asset="")
+
+    def test_integration_empty_list_error(self):
+        """Test that GetAssetInfoRequest raises error for empty list"""
+        with pytest.raises(ValidationError, match="List cannot be empty"):
+            GetAssetInfoRequest(asset=[])
+
+    def test_integration_list_with_non_string_error(self):
+        """Test that GetAssetInfoRequest raises error for list with non-string"""
+        with pytest.raises(ValidationError, match="All list items must be strings"):
+            GetAssetInfoRequest(asset=["BTC", 123])

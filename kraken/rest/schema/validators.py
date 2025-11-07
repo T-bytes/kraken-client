@@ -223,3 +223,64 @@ def validate_timeout(value: int | str) -> int:
     if timeout < 0 or timeout > 86400:
         raise ValueError(f"Timeout must be between 0 and 86400 seconds (24 hours), got {timeout}")
     return timeout
+
+
+def normalize_comma_separated_list(value: str | list[str] | None) -> str | None:
+    """Normalize input to comma-separated string format.
+
+    Accepts a string (returned as-is after stripping), a list of strings
+    (converted to comma-separated format), or None. Validates that list
+    items are non-empty strings and removes duplicates while preserving order.
+
+    Args:
+        value: Either a comma-delimited string, a list of strings, or None
+
+    Returns:
+        Comma-delimited string or None
+
+    Raises:
+        ValueError: If input is invalid (empty, wrong type, contains empty strings, etc.)
+
+    Examples:
+        >>> normalize_comma_separated_list("BTC")
+        'BTC'
+        >>> normalize_comma_separated_list("BTC,ETH")
+        'BTC,ETH'
+        >>> normalize_comma_separated_list(["BTC", "ETH"])
+        'BTC,ETH'
+        >>> normalize_comma_separated_list(None)
+        None
+        >>> normalize_comma_separated_list(["BTC", "ETH", "BTC"])
+        'BTC,ETH'
+    """
+    if value is None:
+        return None
+
+    if isinstance(value, str):
+        if not value.strip():
+            raise ValueError("String cannot be empty or whitespace")
+        return value.strip()
+
+    if isinstance(value, list):
+        if not value:
+            raise ValueError("List cannot be empty")
+
+        validated_items = []
+        seen = set()
+
+        for item in value:
+            if not isinstance(item, str):
+                raise ValueError(f"All list items must be strings, got {type(item).__name__}")
+
+            stripped = item.strip()
+            if not stripped:
+                raise ValueError("List cannot contain empty or whitespace-only strings")
+
+            # Remove duplicates while preserving order
+            if stripped not in seen:
+                validated_items.append(stripped)
+                seen.add(stripped)
+
+        return ",".join(validated_items)
+
+    raise ValueError(f"Must be a string, list, or None, got {type(value).__name__}")
