@@ -21,6 +21,9 @@ from kraken.rest.schema.market import (
     GetOrderBookRequest,
     GetOrderBookResponse,
     GetOrderBookSuccess,
+    GetRecentSpreadsRequest,
+    GetRecentSpreadsResponse,
+    GetRecentSpreadsSuccess,
     GetRecentTradesRequest,
     GetRecentTradesResponse,
     GetRecentTradesSuccess,
@@ -37,6 +40,7 @@ from kraken.rest.schema.market import (
     OrderBook,
     OrderBookEntry,
     RecentTradeEntry,
+    SpreadEntry,
     TickerInfo,
 )
 from kraken.rest.schema.trading import (
@@ -7455,3 +7459,363 @@ class TestGetRecentTradesResponse:
         assert response.is_success is True
         assert len(response.success.trades["XXBTZUSD"]) == 0
         assert response.success.last == "1616663618000000000"
+
+
+class TestSpreadEntry:
+    """Tests for SpreadEntry schema"""
+
+    def test_from_array_valid(self):
+        """Test parsing valid spread entry from array"""
+        spread_array = [1616663618, "50000.00", "50001.00"]
+
+        entry = SpreadEntry.from_array(spread_array)
+
+        assert entry.time == 1616663618
+        assert entry.bid == "50000.00"
+        assert entry.ask == "50001.00"
+
+    def test_from_array_with_high_precision(self):
+        """Test parsing spread entry with high precision prices"""
+        spread_array = [1616663618, "50123.123456789", "50124.987654321"]
+
+        entry = SpreadEntry.from_array(spread_array)
+
+        assert entry.time == 1616663618
+        assert entry.bid == "50123.123456789"
+        assert entry.ask == "50124.987654321"
+
+    def test_from_array_invalid_length_too_short(self):
+        """Test that array with too few elements raises error"""
+        spread_array = [1616663618, "50000.00"]
+
+        with pytest.raises(ValueError, match="exactly 3 elements"):
+            SpreadEntry.from_array(spread_array)
+
+    def test_from_array_invalid_length_too_long(self):
+        """Test that array with too many elements raises error"""
+        spread_array = [1616663618, "50000.00", "50001.00", "extra"]
+
+        with pytest.raises(ValueError, match="exactly 3 elements"):
+            SpreadEntry.from_array(spread_array)
+
+    def test_direct_instantiation(self):
+        """Test creating SpreadEntry directly"""
+        entry = SpreadEntry(
+            time=1616663618,
+            bid="49999.50",
+            ask="50000.50",
+        )
+
+        assert entry.time == 1616663618
+        assert entry.bid == "49999.50"
+        assert entry.ask == "50000.50"
+
+    def test_precision_preservation(self):
+        """Test that price precision is preserved as strings"""
+        spread_array = [1616663618, "50123.123456789012345", "50124.987654321098765"]
+
+        entry = SpreadEntry.from_array(spread_array)
+
+        assert entry.bid == "50123.123456789012345"
+        assert entry.ask == "50124.987654321098765"
+
+
+class TestGetRecentSpreadsRequest:
+    """Tests for GetRecentSpreadsRequest schema"""
+
+    def test_minimal_valid_request(self):
+        """Test creating a minimal valid request with pair only"""
+        request = GetRecentSpreadsRequest(pair="XBTUSD")
+
+        assert request.pair == "XBTUSD"
+        assert request.since is None
+        assert request.asset_class is None
+
+    def test_request_with_all_parameters(self):
+        """Test creating request with all optional parameters"""
+        request = GetRecentSpreadsRequest(
+            pair="ETHUSD",
+            since=1678219570,
+            asset_class="tokenized_asset",
+        )
+
+        assert request.pair == "ETHUSD"
+        assert request.since == 1678219570
+        assert request.asset_class == "tokenized_asset"
+
+    def test_to_api_dict_minimal(self):
+        """Test to_api_dict() with minimal parameters"""
+        request = GetRecentSpreadsRequest(pair="XBTUSD")
+        data = request.to_api_dict()
+
+        assert "pair" in data
+        assert data["pair"] == "XBTUSD"
+        # None values should be excluded
+        assert "since" not in data
+        assert "asset_class" not in data
+
+    def test_to_api_dict_with_all_params(self):
+        """Test to_api_dict() with all parameters"""
+        request = GetRecentSpreadsRequest(
+            pair="ETHUSD",
+            since=1678219570,
+            asset_class="tokenized_asset",
+        )
+        data = request.to_api_dict()
+
+        assert data["pair"] == "ETHUSD"
+        assert data["since"] == 1678219570
+        assert data["asset_class"] == "tokenized_asset"
+
+    def test_to_api_dict_exclude_none_false(self):
+        """Test to_api_dict() with exclude_none=False"""
+        request = GetRecentSpreadsRequest(pair="XBTUSD")
+        data = request.to_api_dict(exclude_none=False)
+
+        assert "since" in data
+        assert data["since"] is None
+        assert "asset_class" in data
+        assert data["asset_class"] is None
+
+    def test_tokenized_asset_request(self):
+        """Test request for tokenized asset"""
+        request = GetRecentSpreadsRequest(
+            pair="TSLA/USD",
+            asset_class="tokenized_asset",
+        )
+
+        assert request.pair == "TSLA/USD"
+        assert request.asset_class == "tokenized_asset"
+
+    def test_incremental_update_request(self):
+        """Test request for incremental updates with since parameter"""
+        request = GetRecentSpreadsRequest(
+            pair="XBTUSD",
+            since=1678219570,
+        )
+
+        assert request.pair == "XBTUSD"
+        assert request.since == 1678219570
+
+
+class TestGetRecentSpreadsResponse:
+    """Tests for GetRecentSpreads response schemas"""
+
+    def test_success_response_single_pair(self):
+        """Test parsing successful response for single pair"""
+        kraken_response = {
+            "error": [],
+            "result": {
+                "XXBTZUSD": [
+                    [1616663618, "50000.00", "50001.00"],
+                    [1616663619, "50002.00", "50003.00"],
+                ],
+                "last": 1616663619,
+            },
+        }
+
+        response = GetRecentSpreadsResponse.from_response(kraken_response)
+
+        assert response.is_success is True
+        assert response.success is not None
+        assert response.failure is None
+        assert response.success.last == 1616663619
+        assert "XXBTZUSD" in response.success.spreads
+
+        spreads = response.success.spreads["XXBTZUSD"]
+        assert len(spreads) == 2
+        assert spreads[0].time == 1616663618
+        assert spreads[0].bid == "50000.00"
+        assert spreads[0].ask == "50001.00"
+        assert spreads[1].time == 1616663619
+        assert spreads[1].bid == "50002.00"
+        assert spreads[1].ask == "50003.00"
+
+    def test_success_response_multiple_pairs(self):
+        """Test parsing successful response with multiple pairs"""
+        kraken_response = {
+            "error": [],
+            "result": {
+                "XXBTZUSD": [
+                    [1616663618, "50000.00", "50001.00"],
+                ],
+                "XETHZUSD": [
+                    [1616663620, "2000.00", "2001.00"],
+                ],
+                "last": 1616663620,
+            },
+        }
+
+        response = GetRecentSpreadsResponse.from_response(kraken_response)
+
+        assert response.is_success is True
+        assert len(response.success.spreads) == 2
+        assert "XXBTZUSD" in response.success.spreads
+        assert "XETHZUSD" in response.success.spreads
+        assert response.success.last == 1616663620
+
+    def test_success_response_many_spreads(self):
+        """Test parsing response with many spread entries"""
+        # Create 100 spread entries
+        spreads_array = []
+        for i in range(100):
+            spreads_array.append([1616663618 + i, f"{50000 + i}.00", f"{50001 + i}.00"])
+
+        kraken_response = {
+            "error": [],
+            "result": {
+                "XXBTZUSD": spreads_array,
+                "last": 1616663718,
+            },
+        }
+
+        response = GetRecentSpreadsResponse.from_response(kraken_response)
+
+        assert response.is_success is True
+        assert len(response.success.spreads["XXBTZUSD"]) == 100
+        assert response.success.spreads["XXBTZUSD"][0].bid == "50000.00"
+        assert response.success.spreads["XXBTZUSD"][99].bid == "50099.00"
+
+    def test_success_response_from_json_string(self):
+        """Test parsing from JSON string"""
+        json_response = json.dumps(
+            {
+                "error": [],
+                "result": {
+                    "XXBTZUSD": [
+                        [1616663618, "50000.00", "50001.00"],
+                    ],
+                    "last": 1616663618,
+                },
+            }
+        )
+
+        response = GetRecentSpreadsResponse.from_response(json_response)
+
+        assert response.is_success is True
+        assert len(response.success.spreads["XXBTZUSD"]) == 1
+
+    def test_error_response_single_error(self):
+        """Test parsing error response with single error"""
+        kraken_response = {
+            "error": ["EGeneral:Invalid arguments"],
+        }
+
+        response = GetRecentSpreadsResponse.from_response(kraken_response)
+
+        assert response.is_success is False
+        assert response.success is None
+        assert response.failure is not None
+        assert "EGeneral:Invalid arguments" in response.failure.error
+
+    def test_error_response_multiple_errors(self):
+        """Test parsing error response with multiple errors"""
+        kraken_response = {
+            "error": [
+                "EGeneral:Invalid arguments",
+                "EQuery:Unknown asset pair",
+            ],
+        }
+
+        response = GetRecentSpreadsResponse.from_response(kraken_response)
+
+        assert response.is_success is False
+        assert len(response.failure.error) == 2
+        assert "EGeneral:Invalid arguments" in response.failure.error
+        assert "EQuery:Unknown asset pair" in response.failure.error
+
+    def test_invalid_response_missing_result(self):
+        """Test that response missing 'result' raises error"""
+        invalid_response = {"error": []}
+
+        with pytest.raises(ValueError, match="missing 'result'"):
+            GetRecentSpreadsResponse.from_response(invalid_response)
+
+    def test_invalid_response_missing_last(self):
+        """Test that response missing 'last' field raises error"""
+        invalid_response = {
+            "error": [],
+            "result": {
+                "XXBTZUSD": [
+                    [1616663618, "50000.00", "50001.00"],
+                ],
+            },
+        }
+
+        with pytest.raises(ValueError, match="missing 'last'"):
+            GetRecentSpreadsResponse.from_response(invalid_response)
+
+    def test_success_model_direct_instantiation(self):
+        """Test creating GetRecentSpreadsSuccess directly"""
+        spread = SpreadEntry(
+            time=1616663618,
+            bid="50000.00",
+            ask="50001.00",
+        )
+
+        success = GetRecentSpreadsSuccess(
+            spreads={"XXBTZUSD": [spread]},
+            last=1616663618,
+        )
+
+        assert len(success.spreads["XXBTZUSD"]) == 1
+        assert success.last == 1616663618
+        assert success.spreads["XXBTZUSD"][0].bid == "50000.00"
+
+    def test_response_wrapper_direct_instantiation(self):
+        """Test creating GetRecentSpreadsResponse wrapper directly"""
+        from kraken.rest.schema.trading import ResponseErrorSchema
+
+        success = GetRecentSpreadsSuccess(
+            spreads={},
+            last=1616663618,
+        )
+        response = GetRecentSpreadsResponse(success=success)
+
+        assert response.is_success is True
+        assert response.success.last == 1616663618
+
+        error = ResponseErrorSchema(error=["Test error"])
+        response2 = GetRecentSpreadsResponse(failure=error)
+
+        assert response2.is_success is False
+        assert response2.failure.error[0] == "Test error"
+
+    def test_precision_preservation(self):
+        """Test that price precision is preserved"""
+        kraken_response = {
+            "error": [],
+            "result": {
+                "XXBTZUSD": [
+                    [
+                        1616663618,
+                        "50123.123456789012345",
+                        "50124.987654321098765",
+                    ],
+                ],
+                "last": 1616663618,
+            },
+        }
+
+        response = GetRecentSpreadsResponse.from_response(kraken_response)
+
+        spread = response.success.spreads["XXBTZUSD"][0]
+        assert spread.bid == "50123.123456789012345"
+        assert spread.ask == "50124.987654321098765"
+        assert spread.time == 1616663618
+
+    def test_empty_spreads_array(self):
+        """Test parsing response with empty spreads array"""
+        kraken_response = {
+            "error": [],
+            "result": {
+                "XXBTZUSD": [],
+                "last": 1616663618,
+            },
+        }
+
+        response = GetRecentSpreadsResponse.from_response(kraken_response)
+
+        assert response.is_success is True
+        assert len(response.success.spreads["XXBTZUSD"]) == 0
+        assert response.success.last == 1616663618

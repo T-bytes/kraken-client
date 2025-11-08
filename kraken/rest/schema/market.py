@@ -1384,3 +1384,163 @@ class GetRecentTradesResponse(BaseResponseWrapper[GetRecentTradesSuccess]):
 
         success_data = GetRecentTradesSuccess(trades=trades, last=last)
         return cls(success=success_data)
+
+
+class SpreadEntry(BaseSchema):
+    """Individual spread entry from Kraken API.
+
+    Represents a single spread data point with timestamp, bid price, and ask price.
+    All price values are returned as strings for precision.
+    """
+
+    time: int = Field(
+        ...,
+        description="Unix timestamp for the spread entry.",
+    )
+    bid: str = Field(
+        ...,
+        description="Bid price. Price as string for precision.",
+    )
+    ask: str = Field(
+        ...,
+        description="Ask price. Price as string for precision.",
+    )
+
+    @classmethod
+    def from_array(cls, data: list) -> "SpreadEntry":
+        """Parse spread entry from Kraken's array format.
+
+        Args:
+            data: Array in format [time, bid, ask]
+
+        Returns:
+            SpreadEntry instance
+
+        Raises:
+            ValueError: If array doesn't have exactly 3 elements
+        """
+        if len(data) != 3:
+            raise ValueError(f"Spread entry array must have exactly 3 elements, got {len(data)}")
+
+        return cls(
+            time=data[0],
+            bid=data[1],
+            ask=data[2],
+        )
+
+
+class GetRecentSpreadsRequest(BaseRequestSchema):
+    """Schema for Kraken GetRecentSpreads API request.
+
+    This schema validates and prepares data for submission to Kraken's
+    GetRecentSpreads (Spread) API endpoint, which retrieves the most recent
+    spread data for a specific trading pair.
+
+    Important Notes:
+        - This is a public endpoint that requires no authentication.
+        - The 'pair' parameter is required.
+        - The 'since' parameter is for incremental updates - returns spreads since the given timestamp.
+        - The 'asset_class' parameter is required for non-crypto pairs (e.g., tokenized assets).
+        - Use to_api_dict() to serialize for API submission.
+
+    Usage Examples:
+        Get recent spreads for a single pair:
+        >>> spreads_request = GetRecentSpreadsRequest(pair="XBTUSD")
+        >>> data = spreads_request.to_api_dict()
+        >>> response = client.request("Spread", data=data)
+
+        Get incremental updates since a timestamp:
+        >>> spreads_request = GetRecentSpreadsRequest(pair="XBTUSD", since=1678219570)
+        >>> data = spreads_request.to_api_dict()
+        >>> response = client.request("Spread", data=data)
+
+        Get spreads for tokenized asset:
+        >>> spreads_request = GetRecentSpreadsRequest(
+        ...     pair="TSLA/USD",
+        ...     asset_class="tokenized_asset"
+        ... )
+        >>> response = client.request("Spread", data=spreads_request.to_api_dict())
+
+        Async usage:
+        >>> spreads_request = GetRecentSpreadsRequest(pair="XBTUSD")
+        >>> response = await client.arequest("Spread", data=spreads_request.to_api_dict())
+    """
+
+    pair: str = Field(
+        ...,
+        description="Asset pair to get data for (e.g., 'XBTUSD').",
+    )
+    since: int | None = Field(
+        default=None,
+        description="Return spread data since given timestamp. Unix timestamp for incremental updates.",
+    )
+    asset_class: Literal["tokenized_asset"] | None = Field(
+        default=None,
+        description="Asset class filter. Required for tokenized pairs (e.g., xstocks).",
+    )
+
+
+class GetRecentSpreadsSuccess(BaseSchema):
+    """Successful GetRecentSpreads response from Kraken API.
+
+    Contains a dictionary of spreads keyed by pair name, with each value
+    containing an array of spread entries for that trading pair. Also includes
+    the 'last' timestamp for incremental polling.
+    """
+
+    spreads: dict[str, list[SpreadEntry]] = Field(
+        default_factory=dict,
+        description="Dictionary mapping asset pair names to their spread arrays.",
+    )
+    last: int = Field(
+        ...,
+        description="ID to be used as 'since' when polling for new spread data.",
+    )
+
+
+class GetRecentSpreadsResponse(BaseResponseWrapper[GetRecentSpreadsSuccess]):
+    """Combined response wrapper for GetRecentSpreads API calls.
+
+    This wrapper handles both success and error cases from the Kraken API.
+    Use the `is_success` property to determine the outcome and access the
+    appropriate `success` or `error` attribute.
+    """
+
+    @classmethod
+    def from_response(cls, response: dict | str) -> "GetRecentSpreadsResponse":
+        """Parse a Kraken API response into the appropriate response model.
+
+        Args:
+            response: Either a JSON string or dict containing the API response
+
+        Returns:
+            GetRecentSpreadsResponse with either success or error data populated
+
+        Raises:
+            ValueError: If the response format is invalid
+        """
+        if isinstance(response, str):
+            response = json.loads(response)
+        errors = response.get("error", [])
+        if errors:
+            error_data = ResponseErrorSchema(error=errors)
+            return cls(failure=error_data)
+        result = response.get("result")
+        if result is None:
+            raise ValueError("Response missing 'result' field")
+
+        # Extract 'last' field
+        last = result.get("last")
+        if last is None:
+            raise ValueError("Response result missing 'last' field")
+
+        # Parse spread data for each pair (all keys except 'last')
+        spreads = {}
+        for pair_name, spread_data in result.items():
+            if pair_name == "last":
+                continue
+            # Parse array of spread arrays into list of SpreadEntry objects
+            spreads[pair_name] = [SpreadEntry.from_array(spread) for spread in spread_data]
+
+        success_data = GetRecentSpreadsSuccess(spreads=spreads, last=last)
+        return cls(success=success_data)
