@@ -15,6 +15,9 @@ from kraken.rest.schema.market import (
     GetAssetPairsRequest,
     GetAssetPairsResponse,
     GetAssetPairsSuccess,
+    GetOHLCDataRequest,
+    GetOHLCDataResponse,
+    GetOHLCDataSuccess,
     GetServerTimeRequest,
     GetServerTimeResponse,
     GetServerTimeSuccess,
@@ -24,6 +27,7 @@ from kraken.rest.schema.market import (
     GetTickerInformationRequest,
     GetTickerInformationResponse,
     GetTickerInformationSuccess,
+    OHLCData,
     TickerInfo,
 )
 from kraken.rest.schema.trading import (
@@ -6026,5 +6030,508 @@ class TestGetTickerInformationResponse:
         # Failure case
         error = ResponseErrorSchema(error=["Test error"])
         response_failure = GetTickerInformationResponse(failure=error)
+
+        assert response_failure.is_success is False
+
+
+class TestGetOHLCDataRequest:
+    """Tests for GetOHLCDataRequest schema"""
+
+    def test_minimal_valid_request(self):
+        """Test creating a minimal valid OHLC request with required pair"""
+        request = GetOHLCDataRequest(pair="XBTUSD")
+
+        assert request.pair == "XBTUSD"
+        assert request.interval is None
+        assert request.since is None
+        assert request.asset_class is None
+
+    def test_request_with_all_parameters(self):
+        """Test creating request with all parameters"""
+        request = GetOHLCDataRequest(
+            pair="XBTUSD",
+            interval=60,
+            since=1688671200,
+            asset_class="tokenized_asset",
+        )
+
+        assert request.pair == "XBTUSD"
+        assert request.interval == 60
+        assert request.since == 1688671200
+        assert request.asset_class == "tokenized_asset"
+
+    def test_pair_list_normalization(self):
+        """Test that pair list is normalized to comma-separated string"""
+        # List input
+        request1 = GetOHLCDataRequest(pair=["XBTUSD", "ETHUSD"])
+        assert request1.pair == "XBTUSD,ETHUSD"
+
+        # String input (unchanged)
+        request2 = GetOHLCDataRequest(pair="XBTUSD,ETHUSD")
+        assert request2.pair == "XBTUSD,ETHUSD"
+
+        # Single item list
+        request3 = GetOHLCDataRequest(pair=["XBTUSD"])
+        assert request3.pair == "XBTUSD"
+
+    def test_pair_list_deduplication(self):
+        """Test that duplicate pairs are removed"""
+        request = GetOHLCDataRequest(pair=["XBTUSD", "ETHUSD", "XBTUSD"])
+        assert request.pair == "XBTUSD,ETHUSD"
+
+    def test_interval_validation_valid_values(self):
+        """Test that valid interval values are accepted"""
+        valid_intervals = [1, 5, 15, 30, 60, 240, 1440, 10080, 21600]
+
+        for interval in valid_intervals:
+            request = GetOHLCDataRequest(pair="XBTUSD", interval=interval)
+            assert request.interval == interval
+
+    def test_interval_validation_invalid_value(self):
+        """Test that invalid interval values are rejected"""
+        with pytest.raises(ValidationError, match="Interval must be one of"):
+            GetOHLCDataRequest(pair="XBTUSD", interval=10)
+
+        with pytest.raises(ValidationError, match="Interval must be one of"):
+            GetOHLCDataRequest(pair="XBTUSD", interval=999)
+
+        with pytest.raises(ValidationError, match="Interval must be one of"):
+            GetOHLCDataRequest(pair="XBTUSD", interval=0)
+
+    def test_interval_none_is_valid(self):
+        """Test that None interval is valid (uses API default)"""
+        request = GetOHLCDataRequest(pair="XBTUSD", interval=None)
+        assert request.interval is None
+
+    def test_since_parameter(self):
+        """Test since parameter for incremental updates"""
+        request = GetOHLCDataRequest(pair="XBTUSD", since=1688671200)
+        assert request.since == 1688671200
+
+    def test_asset_class_tokenized(self):
+        """Test asset_class parameter for tokenized assets"""
+        request = GetOHLCDataRequest(
+            pair="TSLA/USD",
+            asset_class="tokenized_asset",
+        )
+        assert request.asset_class == "tokenized_asset"
+
+    def test_to_api_dict_minimal(self):
+        """Test to_api_dict() with minimal parameters"""
+        request = GetOHLCDataRequest(pair="XBTUSD")
+        data = request.to_api_dict()
+
+        assert "pair" in data
+        assert data["pair"] == "XBTUSD"
+        # None values should be excluded
+        assert "interval" not in data
+        assert "since" not in data
+        assert "asset_class" not in data
+
+    def test_to_api_dict_all_parameters(self):
+        """Test to_api_dict() with all parameters"""
+        request = GetOHLCDataRequest(
+            pair="XBTUSD",
+            interval=60,
+            since=1688671200,
+            asset_class="tokenized_asset",
+        )
+        data = request.to_api_dict()
+
+        assert data["pair"] == "XBTUSD"
+        assert data["interval"] == 60
+        assert data["since"] == 1688671200
+        assert data["asset_class"] == "tokenized_asset"
+
+    def test_to_api_dict_exclude_none_false(self):
+        """Test to_api_dict() with exclude_none=False"""
+        request = GetOHLCDataRequest(pair="XBTUSD")
+        data = request.to_api_dict(exclude_none=False)
+
+        assert "pair" in data
+        assert "interval" in data
+        assert data["interval"] is None
+
+
+class TestGetOHLCDataResponse:
+    """Tests for GetOHLCData response schemas"""
+
+    def test_ohlc_data_from_array(self):
+        """Test creating OHLCData from array format"""
+        candle_array = [
+            1688671200,
+            "50000.0",
+            "50500.0",
+            "49500.0",
+            "50200.0",
+            "50100.0",
+            "123.456",
+            100,
+        ]
+
+        ohlc = OHLCData.from_array(candle_array)
+
+        assert ohlc.time == 1688671200
+        assert ohlc.open == "50000.0"
+        assert ohlc.high == "50500.0"
+        assert ohlc.low == "49500.0"
+        assert ohlc.close == "50200.0"
+        assert ohlc.vwap == "50100.0"
+        assert ohlc.volume == "123.456"
+        assert ohlc.count == 100
+
+    def test_ohlc_data_from_array_invalid_length(self):
+        """Test that invalid array length raises error"""
+        # Too few elements
+        with pytest.raises(ValueError, match="must have exactly 8 elements"):
+            OHLCData.from_array([1688671200, "50000.0", "50500.0"])
+
+        # Too many elements
+        with pytest.raises(ValueError, match="must have exactly 8 elements"):
+            OHLCData.from_array(
+                [
+                    1688671200,
+                    "50000.0",
+                    "50500.0",
+                    "49500.0",
+                    "50200.0",
+                    "50100.0",
+                    "123.456",
+                    100,
+                    "extra",
+                ]
+            )
+
+    def test_ohlc_data_direct_instantiation(self):
+        """Test creating OHLCData directly"""
+        ohlc = OHLCData(
+            time=1688671200,
+            open="50000.0",
+            high="50500.0",
+            low="49500.0",
+            close="50200.0",
+            vwap="50100.0",
+            volume="123.456",
+            count=100,
+        )
+
+        assert ohlc.time == 1688671200
+        assert ohlc.open == "50000.0"
+        assert ohlc.high == "50500.0"
+        assert ohlc.low == "49500.0"
+        assert ohlc.close == "50200.0"
+        assert ohlc.vwap == "50100.0"
+        assert ohlc.volume == "123.456"
+        assert ohlc.count == 100
+
+    def test_success_response_single_pair(self):
+        """Test parsing a successful response with single pair"""
+        kraken_response = {
+            "error": [],
+            "result": {
+                "XXBTZUSD": [
+                    [
+                        1688671200,
+                        "50000.0",
+                        "50500.0",
+                        "49500.0",
+                        "50200.0",
+                        "50100.0",
+                        "123.456",
+                        100,
+                    ],
+                    [
+                        1688671260,
+                        "50200.0",
+                        "50600.0",
+                        "50000.0",
+                        "50400.0",
+                        "50300.0",
+                        "150.789",
+                        120,
+                    ],
+                ],
+                "last": 1688671260,
+            },
+        }
+
+        response = GetOHLCDataResponse.from_response(kraken_response)
+
+        assert response.is_success is True
+        assert response.success is not None
+        assert response.failure is None
+        assert response.success.last == 1688671260
+        assert len(response.success.ohlc_data) == 1
+        assert "XXBTZUSD" in response.success.ohlc_data
+
+        ohlc_array = response.success.ohlc_data["XXBTZUSD"]
+        assert len(ohlc_array) == 2
+        assert ohlc_array[0].time == 1688671200
+        assert ohlc_array[0].open == "50000.0"
+        assert ohlc_array[1].time == 1688671260
+        assert ohlc_array[1].close == "50400.0"
+
+    def test_success_response_multiple_pairs(self):
+        """Test parsing a successful response with multiple pairs"""
+        kraken_response = {
+            "error": [],
+            "result": {
+                "XXBTZUSD": [
+                    [
+                        1688671200,
+                        "50000.0",
+                        "50500.0",
+                        "49500.0",
+                        "50200.0",
+                        "50100.0",
+                        "123.456",
+                        100,
+                    ],
+                ],
+                "XETHZUSD": [
+                    [1688671200, "3000.0", "3050.0", "2950.0", "3020.0", "3010.0", "500.123", 200],
+                    [1688671260, "3020.0", "3060.0", "3000.0", "3040.0", "3030.0", "550.456", 210],
+                ],
+                "last": 1688671260,
+            },
+        }
+
+        response = GetOHLCDataResponse.from_response(kraken_response)
+
+        assert response.is_success is True
+        assert response.success.last == 1688671260
+        assert len(response.success.ohlc_data) == 2
+        assert "XXBTZUSD" in response.success.ohlc_data
+        assert "XETHZUSD" in response.success.ohlc_data
+
+        # Verify XXBTZUSD has 1 candle
+        assert len(response.success.ohlc_data["XXBTZUSD"]) == 1
+
+        # Verify XETHZUSD has 2 candles
+        assert len(response.success.ohlc_data["XETHZUSD"]) == 2
+        assert response.success.ohlc_data["XETHZUSD"][1].close == "3040.0"
+
+    def test_success_response_many_candles(self):
+        """Test response with many OHLC candles"""
+        # Create a response with 100 candles
+        candles = []
+        for i in range(100):
+            candles.append(
+                [
+                    1688671200 + i * 60,
+                    f"{50000 + i}.0",
+                    f"{50100 + i}.0",
+                    f"{49900 + i}.0",
+                    f"{50050 + i}.0",
+                    f"{50025 + i}.0",
+                    f"{100 + i}.456",
+                    100 + i,
+                ]
+            )
+
+        kraken_response = {
+            "error": [],
+            "result": {
+                "XXBTZUSD": candles,
+                "last": 1688677140,
+            },
+        }
+
+        response = GetOHLCDataResponse.from_response(kraken_response)
+
+        assert response.is_success is True
+        assert len(response.success.ohlc_data["XXBTZUSD"]) == 100
+        assert response.success.ohlc_data["XXBTZUSD"][0].time == 1688671200
+        assert response.success.ohlc_data["XXBTZUSD"][99].time == 1688677140
+        assert response.success.ohlc_data["XXBTZUSD"][99].count == 199
+
+    def test_parse_from_dict(self):
+        """Test parsing from dict"""
+        kraken_response = {
+            "error": [],
+            "result": {
+                "XXBTZUSD": [
+                    [
+                        1688671200,
+                        "50000.0",
+                        "50500.0",
+                        "49500.0",
+                        "50200.0",
+                        "50100.0",
+                        "123.456",
+                        100,
+                    ],
+                ],
+                "last": 1688671200,
+            },
+        }
+
+        response = GetOHLCDataResponse.from_response(kraken_response)
+
+        assert response.is_success is True
+        assert "XXBTZUSD" in response.success.ohlc_data
+
+    def test_parse_from_json_string(self):
+        """Test parsing from JSON string"""
+        json_response = json.dumps(
+            {
+                "error": [],
+                "result": {
+                    "XXBTZUSD": [
+                        [
+                            1688671200,
+                            "50000.0",
+                            "50500.0",
+                            "49500.0",
+                            "50200.0",
+                            "50100.0",
+                            "123.456",
+                            100,
+                        ],
+                    ],
+                    "last": 1688671200,
+                },
+            }
+        )
+
+        response = GetOHLCDataResponse.from_response(json_response)
+
+        assert response.is_success is True
+        assert "XXBTZUSD" in response.success.ohlc_data
+
+    def test_error_response_single_error(self):
+        """Test parsing an error response with single error"""
+        kraken_response = {
+            "error": ["EGeneral:Invalid arguments"],
+        }
+
+        response = GetOHLCDataResponse.from_response(kraken_response)
+
+        assert response.is_success is False
+        assert response.success is None
+        assert response.failure is not None
+        assert "EGeneral:Invalid arguments" in response.failure.error
+
+    def test_error_response_multiple_errors(self):
+        """Test parsing response with multiple errors"""
+        kraken_response = {
+            "error": [
+                "EGeneral:Invalid arguments",
+                "EQuery:Unknown asset pair",
+            ],
+        }
+
+        response = GetOHLCDataResponse.from_response(kraken_response)
+
+        assert response.is_success is False
+        assert len(response.failure.error) == 2
+        assert "EGeneral:Invalid arguments" in response.failure.error
+        assert "EQuery:Unknown asset pair" in response.failure.error
+
+    def test_invalid_response_format_missing_result(self):
+        """Test that invalid response format raises appropriate error"""
+        invalid_response = {"error": []}  # Missing 'result'
+
+        with pytest.raises(ValueError, match="missing 'result'"):
+            GetOHLCDataResponse.from_response(invalid_response)
+
+    def test_invalid_response_format_missing_last(self):
+        """Test that response missing 'last' field raises error"""
+        invalid_response = {
+            "error": [],
+            "result": {
+                "XXBTZUSD": [
+                    [
+                        1688671200,
+                        "50000.0",
+                        "50500.0",
+                        "49500.0",
+                        "50200.0",
+                        "50100.0",
+                        "123.456",
+                        100,
+                    ],
+                ],
+                # Missing 'last' field
+            },
+        }
+
+        with pytest.raises(ValueError, match="missing 'last'"):
+            GetOHLCDataResponse.from_response(invalid_response)
+
+    def test_success_model_direct_instantiation(self):
+        """Test creating GetOHLCDataSuccess directly"""
+        ohlc = OHLCData(
+            time=1688671200,
+            open="50000.0",
+            high="50500.0",
+            low="49500.0",
+            close="50200.0",
+            vwap="50100.0",
+            volume="123.456",
+            count=100,
+        )
+
+        success = GetOHLCDataSuccess(
+            ohlc_data={"XXBTZUSD": [ohlc]},
+            last=1688671200,
+        )
+
+        assert len(success.ohlc_data) == 1
+        assert "XXBTZUSD" in success.ohlc_data
+        assert success.ohlc_data["XXBTZUSD"][0].time == 1688671200
+        assert success.last == 1688671200
+
+    def test_response_wrapper_direct_instantiation(self):
+        """Test creating GetOHLCDataResponse wrapper directly"""
+        ohlc = OHLCData(
+            time=1688671200,
+            open="50000.0",
+            high="50500.0",
+            low="49500.0",
+            close="50200.0",
+            vwap="50100.0",
+            volume="123.456",
+            count=100,
+        )
+        success = GetOHLCDataSuccess(
+            ohlc_data={"XXBTZUSD": [ohlc]},
+            last=1688671200,
+        )
+        response = GetOHLCDataResponse(success=success)
+
+        assert response.is_success is True
+        assert response.success.ohlc_data["XXBTZUSD"][0].time == 1688671200
+
+        error = ResponseErrorSchema(error=["Test error"])
+        response2 = GetOHLCDataResponse(failure=error)
+
+        assert response2.is_success is False
+        assert response2.failure.error[0] == "Test error"
+
+    def test_is_success_property(self):
+        """Test is_success property verification"""
+        # Success case
+        ohlc = OHLCData(
+            time=1688671200,
+            open="50000.0",
+            high="50500.0",
+            low="49500.0",
+            close="50200.0",
+            vwap="50100.0",
+            volume="123.456",
+            count=100,
+        )
+        success = GetOHLCDataSuccess(
+            ohlc_data={"XXBTZUSD": [ohlc]},
+            last=1688671200,
+        )
+        response_success = GetOHLCDataResponse(success=success)
+
+        assert response_success.is_success is True
+
+        # Failure case
+        error = ResponseErrorSchema(error=["Test error"])
+        response_failure = GetOHLCDataResponse(failure=error)
 
         assert response_failure.is_success is False

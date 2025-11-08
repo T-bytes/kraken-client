@@ -744,3 +744,243 @@ class GetTickerInformationResponse(BaseResponseWrapper[GetTickerInformationSucce
         }
         success_data = GetTickerInformationSuccess(tickers=tickers)
         return cls(success=success_data)
+
+
+class OHLCData(BaseSchema):
+    """Individual OHLC (Open, High, Low, Close) candle data from Kraken API.
+
+    Represents a single time period's trading data including open/high/low/close prices,
+    volume-weighted average price (VWAP), trading volume, and number of trades.
+    All price values are returned as strings for precision.
+    """
+
+    time: int = Field(
+        ...,
+        description="Unix timestamp for the start of the interval.",
+    )
+    open: str = Field(
+        ...,
+        description="Opening price for the interval. Price as string for precision.",
+    )
+    high: str = Field(
+        ...,
+        description="Highest price during the interval. Price as string for precision.",
+    )
+    low: str = Field(
+        ...,
+        description="Lowest price during the interval. Price as string for precision.",
+    )
+    close: str = Field(
+        ...,
+        description="Closing price for the interval. Price as string for precision.",
+    )
+    vwap: str = Field(
+        ...,
+        description="Volume-weighted average price for the interval. Price as string for precision.",
+    )
+    volume: str = Field(
+        ...,
+        description="Trading volume for the interval. Volume as string for precision.",
+    )
+    count: int = Field(
+        ...,
+        description="Number of trades executed during the interval.",
+    )
+
+    @classmethod
+    def from_array(cls, data: list) -> "OHLCData":
+        """Parse OHLC data from Kraken's array format.
+
+        Args:
+            data: Array in format [time, open, high, low, close, vwap, volume, count]
+
+        Returns:
+            OHLCData instance
+
+        Raises:
+            ValueError: If array doesn't have exactly 8 elements
+        """
+        if len(data) != 8:
+            raise ValueError(f"OHLC data array must have exactly 8 elements, got {len(data)}")
+
+        return cls(
+            time=data[0],
+            open=data[1],
+            high=data[2],
+            low=data[3],
+            close=data[4],
+            vwap=data[5],
+            volume=data[6],
+            count=data[7],
+        )
+
+
+class GetOHLCDataRequest(BaseRequestSchema):
+    """Schema for Kraken GetOHLCData API request.
+
+    This schema validates and prepares data for submission to Kraken's
+    GetOHLCData (OHLC) API endpoint, which retrieves OHLC (Open, High, Low, Close)
+    market data. The last entry in the OHLC array is for the current, not-yet-committed
+    time frame and will always be present, regardless of the value of 'since'.
+
+    Important Notes:
+        - This is a public endpoint that requires no authentication.
+        - The 'pair' parameter is required.
+        - The 'pair' parameter accepts both a comma-delimited string or a list of strings.
+        - The 'interval' parameter controls the time frame in minutes (default: 1).
+        - The 'since' parameter is for incremental updates - returns committed OHLC data since the given ID.
+        - The 'asset_class' parameter is required for non-crypto pairs (e.g., tokenized assets).
+        - Use to_api_dict() to serialize for API submission.
+
+    Usage Examples:
+        Get OHLC data for a single pair:
+        >>> ohlc_request = GetOHLCDataRequest(pair="XBTUSD")
+        >>> data = ohlc_request.to_api_dict()
+        >>> response = client.request("OHLC", data=data)
+
+        Get OHLC data with specific interval (60 minutes):
+        >>> ohlc_request = GetOHLCDataRequest(pair="XBTUSD", interval=60)
+        >>> data = ohlc_request.to_api_dict()
+        >>> response = client.request("OHLC", data=data)
+
+        Get OHLC data for multiple pairs (list format):
+        >>> ohlc_request = GetOHLCDataRequest(pair=["XBTUSD", "ETHUSD"], interval=15)
+        >>> data = ohlc_request.to_api_dict()
+        >>> # Result: {"pair": "XBTUSD,ETHUSD", "interval": 15}
+
+        Get incremental updates since a timestamp:
+        >>> ohlc_request = GetOHLCDataRequest(pair="XBTUSD", since=1688671200)
+        >>> data = ohlc_request.to_api_dict()
+        >>> response = client.request("OHLC", data=data)
+
+        Get data for tokenized asset:
+        >>> ohlc_request = GetOHLCDataRequest(
+        ...     pair="TSLA/USD",
+        ...     asset_class="tokenized_asset",
+        ...     interval=1440
+        ... )
+        >>> response = client.request("OHLC", data=ohlc_request.to_api_dict())
+
+        Async usage:
+        >>> ohlc_request = GetOHLCDataRequest(pair="XBTUSD", interval=5)
+        >>> response = await client.arequest("OHLC", data=ohlc_request.to_api_dict())
+    """
+
+    pair: str | list[str] = Field(
+        ...,
+        description="Comma-delimited string or list of asset pairs to get data for (e.g., 'XBTUSD' or ['XBTUSD', 'ETHUSD']).",
+    )
+    interval: int | None = Field(
+        default=None,
+        description="Time frame interval in minutes. Possible values: [1, 5, 15, 30, 60, 240, 1440, 10080, 21600]. Default: 1.",
+    )
+    since: int | None = Field(
+        default=None,
+        description="Return OHLC entries since the given timestamp (intended for incremental updates). Unix timestamp.",
+    )
+    asset_class: Literal["tokenized_asset"] | None = Field(
+        default=None,
+        description="Asset class filter. Required for tokenized pairs (e.g., xstocks).",
+    )
+
+    @field_validator("pair", mode="before")
+    @classmethod
+    def normalize_pair_list(cls, value: str | list[str]) -> str:
+        """Convert pair list to comma-delimited string format.
+
+        Accepts either a string (returned as-is) or a list of strings
+        (converted to comma-delimited format). Validates that list items
+        are non-empty strings and removes duplicates while preserving order.
+
+        Args:
+            value: Either a comma-delimited string or a list of pair strings
+
+        Returns:
+            Comma-delimited string
+
+        Raises:
+            ValueError: If list contains empty strings or non-string values
+        """
+        return validators.normalize_comma_separated_list(value)
+
+    @field_validator("interval", mode="before")
+    @classmethod
+    def validate_interval(cls, value: int | None) -> int | None:
+        """Validate interval is within allowed values.
+
+        Args:
+            value: Interval value in minutes
+
+        Returns:
+            Validated interval as integer, or None if input is None
+
+        Raises:
+            ValueError: If interval is not in allowed set [1, 5, 15, 30, 60, 240, 1440, 10080, 21600]
+        """
+        return validators.validate_ohlc_interval(value)
+
+
+class GetOHLCDataSuccess(BaseSchema):
+    """Successful GetOHLCData response from Kraken API.
+
+    Contains a dictionary of OHLC data keyed by pair name, with each value
+    containing an array of OHLC candles for that trading pair. Also includes
+    the 'last' timestamp for incremental polling.
+    """
+
+    ohlc_data: dict[str, list[OHLCData]] = Field(
+        default_factory=dict,
+        description="Dictionary mapping asset pair names to their OHLC data arrays.",
+    )
+    last: int = Field(
+        ...,
+        description="ID to be used as 'since' when polling for new, committed OHLC data.",
+    )
+
+
+class GetOHLCDataResponse(BaseResponseWrapper[GetOHLCDataSuccess]):
+    """Combined response wrapper for GetOHLCData API calls.
+
+    This wrapper handles both success and error cases from the Kraken API.
+    Use the `is_success` property to determine the outcome and access the
+    appropriate `success` or `error` attribute.
+    """
+
+    @classmethod
+    def from_response(cls, response: dict | str) -> "GetOHLCDataResponse":
+        """Parse a Kraken API response into the appropriate response model.
+
+        Args:
+            response: Either a JSON string or dict containing the API response
+
+        Returns:
+            GetOHLCDataResponse with either success or error data populated
+
+        Raises:
+            ValueError: If the response format is invalid
+        """
+        if isinstance(response, str):
+            response = json.loads(response)
+        errors = response.get("error", [])
+        if errors:
+            error_data = ResponseErrorSchema(error=errors)
+            return cls(failure=error_data)
+        result = response.get("result")
+        if result is None:
+            raise ValueError("Response missing 'result' field")
+
+        # Extract 'last' field
+        last = result.get("last")
+        if last is None:
+            raise ValueError("Response result missing 'last' field")
+
+        # Parse OHLC data for each pair (all keys except 'last')
+        ohlc_data = {}
+        for pair_name, pair_data in result.items():
+            if pair_name == "last":
+                continue
+            # Parse array of OHLC arrays into list of OHLCData objects
+            ohlc_data[pair_name] = [OHLCData.from_array(candle) for candle in pair_data]
+
+        success_data = GetOHLCDataSuccess(ohlc_data=ohlc_data, last=last)
+        return cls(success=success_data)

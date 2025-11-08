@@ -284,3 +284,27 @@ def normalize_comma_separated_list(value: str | list[str] | None) -> str | None:
         return ",".join(validated_items)
 
     raise ValueError(f"Must be a string, list, or None, got {type(value).__name__}")
+
+
+# Valid OHLC interval values in minutes
+OHLC_INTERVAL_VALUES = {1, 5, 15, 30, 60, 240, 1440, 10080, 21600}
+
+
+def validate_ohlc_interval(value: int | None) -> int | None:
+    """Validate OHLC interval is within allowed values.
+
+    Args:
+        value: Interval value in minutes
+
+    Returns:
+        Validated interval as integer, or None if input is None
+
+    Raises:
+        ValueError: If interval is not in allowed set [1, 5, 15, 30, 60, 240, 1440, 10080, 21600]
+    """
+    if value is None:
+        return None
+
+    if value not in OHLC_INTERVAL_VALUES:
+        raise ValueError(f"Interval must be one of {sorted(OHLC_INTERVAL_VALUES)}, got {value}")
+    return value
