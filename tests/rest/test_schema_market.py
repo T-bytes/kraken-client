@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from pydantic import ValidationError
 
+from kraken.rest.schema.base import ResponseErrorSchema
 from kraken.rest.schema.market import (
     AssetInfo,
     AssetPairInfo,
@@ -43,7 +44,6 @@ from kraken.rest.schema.market import (
     SpreadEntry,
     TickerInfo,
 )
-from kraken.rest.schema.base import ResponseErrorSchema
 
 
 class TestGetServerTimeRequest:

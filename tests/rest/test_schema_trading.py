@@ -3226,5 +3226,3 @@ class TestConcurrentCancelOrderBatchScenarios:
 
         assert len(batch1.orders) == 50
         assert len(batch2.cl_ord_ids) == 50
-
-
