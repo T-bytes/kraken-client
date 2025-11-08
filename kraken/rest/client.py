@@ -148,6 +148,40 @@ class KrakenRESTClient:
         self._async_client: Optional[httpx.AsyncClient] = None
         logger.info("Kraken REST client initialized")
 
+    def __enter__(self):
+        """Synchronous context manager entry."""
+        self._get_sync_client()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Synchronous context manager exit."""
+        self.close()
+        return False
+
+    async def __aenter__(self):
+        """Asynchronous context manager entry."""
+        self._get_async_client()
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Asynchronous context manager exit."""
+        await self.aclose()
+        return False
+
+    def close(self):
+        """Close the synchronous HTTP client and cleanup resources."""
+        if self._sync_client:
+            self._sync_client.close()
+            self._sync_client = None
+        logger.info("Kraken REST client (sync) closed")
+
+    async def aclose(self):
+        """Close the asynchronous HTTP client and cleanup resources."""
+        if self._async_client:
+            await self._async_client.aclose()
+            self._async_client = None
+        logger.info("Kraken REST client (async) closed")
+
     def _get_sync_client(self) -> httpx.Client:
         """Get or create the synchronous HTTP client.
 
@@ -240,7 +274,6 @@ class KrakenRESTClient:
             logger.error(f"Unable to prepare order: {str(e)}")
         return data
 
-    # Synchronous public methods
     def request(self, endpoint: str, **kwargs) -> Dict[str, Any]:
         """Make a synchronous request to the Kraken API.
 
@@ -329,7 +362,6 @@ class KrakenRESTClient:
         logger.info(f"Successfully completed request to {endpoint}")
         return data
 
-    # Asynchronous public methods
     async def arequest(self, endpoint: str, **kwargs) -> Dict[str, Any]:
         """Make an asynchronous request to the Kraken API.
 
@@ -417,37 +449,3 @@ class KrakenRESTClient:
 
         logger.info(f"Successfully completed async request to {endpoint}")
         return data
-
-    def close(self):
-        """Close the synchronous HTTP client and cleanup resources."""
-        if self._sync_client:
-            self._sync_client.close()
-            self._sync_client = None
-        logger.info("Kraken REST client (sync) closed")
-
-    async def aclose(self):
-        """Close the asynchronous HTTP client and cleanup resources."""
-        if self._async_client:
-            await self._async_client.aclose()
-            self._async_client = None
-        logger.info("Kraken REST client (async) closed")
-
-    def __enter__(self):
-        """Synchronous context manager entry."""
-        self._get_sync_client()
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        """Synchronous context manager exit."""
-        self.close()
-        return False
-
-    async def __aenter__(self):
-        """Asynchronous context manager entry."""
-        self._get_async_client()
-        return self
-
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        """Asynchronous context manager exit."""
-        await self.aclose()
-        return False
