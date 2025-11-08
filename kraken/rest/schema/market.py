@@ -968,18 +968,14 @@ class GetOHLCDataResponse(BaseResponseWrapper[GetOHLCDataSuccess]):
         result = response.get("result")
         if result is None:
             raise ValueError("Response missing 'result' field")
-
-        # Extract 'last' field
         last = result.get("last")
         if last is None:
             raise ValueError("Response result missing 'last' field")
 
-        # Parse OHLC data for each pair (all keys except 'last')
         ohlc_data = {}
         for pair_name, pair_data in result.items():
             if pair_name == "last":
                 continue
-            # Parse array of OHLC arrays into list of OHLCData objects
             ohlc_data[pair_name] = [OHLCData.from_array(candle) for candle in pair_data]
 
         success_data = GetOHLCDataSuccess(ohlc_data=ohlc_data, last=last)
@@ -1165,7 +1161,6 @@ class GetOrderBookResponse(BaseResponseWrapper[GetOrderBookSuccess]):
         if result is None:
             raise ValueError("Response missing 'result' field")
 
-        # Parse order book data for each pair
         order_books = {}
         for pair_name, book_data in result.items():
             asks = [OrderBookEntry.from_array(entry) for entry in book_data.get("asks", [])]
@@ -1368,18 +1363,14 @@ class GetRecentTradesResponse(BaseResponseWrapper[GetRecentTradesSuccess]):
         result = response.get("result")
         if result is None:
             raise ValueError("Response missing 'result' field")
-
-        # Extract 'last' field
         last = result.get("last")
         if last is None:
             raise ValueError("Response result missing 'last' field")
 
-        # Parse trade data for each pair (all keys except 'last')
         trades = {}
         for pair_name, trade_data in result.items():
             if pair_name == "last":
                 continue
-            # Parse array of trade arrays into list of RecentTradeEntry objects
             trades[pair_name] = [RecentTradeEntry.from_array(trade) for trade in trade_data]
 
         success_data = GetRecentTradesSuccess(trades=trades, last=last)
@@ -1528,18 +1519,14 @@ class GetRecentSpreadsResponse(BaseResponseWrapper[GetRecentSpreadsSuccess]):
         result = response.get("result")
         if result is None:
             raise ValueError("Response missing 'result' field")
-
-        # Extract 'last' field
         last = result.get("last")
         if last is None:
             raise ValueError("Response result missing 'last' field")
 
-        # Parse spread data for each pair (all keys except 'last')
         spreads = {}
         for pair_name, spread_data in result.items():
             if pair_name == "last":
                 continue
-            # Parse array of spread arrays into list of SpreadEntry objects
             spreads[pair_name] = [SpreadEntry.from_array(spread) for spread in spread_data]
 
         success_data = GetRecentSpreadsSuccess(spreads=spreads, last=last)
