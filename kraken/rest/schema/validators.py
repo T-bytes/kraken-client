@@ -328,3 +328,23 @@ def validate_order_book_count(value: int | None) -> int | None:
     if value < 1 or value > 500:
         raise ValueError(f"Count must be between 1 and 500, got {value}")
     return value
+
+
+def validate_recent_trades_count(value: int | None) -> int | None:
+    """Validate recent trades count is within allowed range.
+
+    Args:
+        value: Count value for maximum number of trades
+
+    Returns:
+        Validated count as integer, or None if input is None
+
+    Raises:
+        ValueError: If count is not between 1 and 1000 inclusive
+    """
+    if value is None:
+        return None
+
+    if value < 1 or value > 1000:
+        raise ValueError(f"Count must be between 1 and 1000, got {value}")
+    return value

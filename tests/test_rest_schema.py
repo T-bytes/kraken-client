@@ -21,6 +21,9 @@ from kraken.rest.schema.market import (
     GetOrderBookRequest,
     GetOrderBookResponse,
     GetOrderBookSuccess,
+    GetRecentTradesRequest,
+    GetRecentTradesResponse,
+    GetRecentTradesSuccess,
     GetServerTimeRequest,
     GetServerTimeResponse,
     GetServerTimeSuccess,
@@ -33,6 +36,7 @@ from kraken.rest.schema.market import (
     OHLCData,
     OrderBook,
     OrderBookEntry,
+    RecentTradeEntry,
     TickerInfo,
 )
 from kraken.rest.schema.trading import (
@@ -7011,3 +7015,443 @@ class TestGetOrderBookResponse:
         assert book.asks[0].volume == "1.123456789012345"
         assert book.bids[0].price == "50000.987654321098"
         assert book.bids[0].volume == "2.987654321098765"
+
+
+class TestRecentTradeEntry:
+    """Tests for RecentTradeEntry schema"""
+
+    def test_from_array_valid(self):
+        """Test parsing valid trade entry from array"""
+        trade_array = ["50000.50", "1.5", 1616663618.1234, "b", "m", "", 123456]
+
+        entry = RecentTradeEntry.from_array(trade_array)
+
+        assert entry.price == "50000.50"
+        assert entry.volume == "1.5"
+        assert entry.time == 1616663618.1234
+        assert entry.buy_sell == "b"
+        assert entry.market_limit == "m"
+        assert entry.miscellaneous == ""
+        assert entry.trade_id == 123456
+
+    def test_from_array_with_none_trade_id(self):
+        """Test parsing trade entry with null trade_id"""
+        trade_array = ["49500.00", "0.25", 1616663618.5678, "s", "l", "misc", None]
+
+        entry = RecentTradeEntry.from_array(trade_array)
+
+        assert entry.price == "49500.00"
+        assert entry.volume == "0.25"
+        assert entry.time == 1616663618.5678
+        assert entry.buy_sell == "s"
+        assert entry.market_limit == "l"
+        assert entry.miscellaneous == "misc"
+        assert entry.trade_id is None
+
+    def test_from_array_with_empty_trade_id(self):
+        """Test parsing trade entry with empty string trade_id (treated as None)"""
+        trade_array = ["50100.00", "2.0", 1616663619.0, "b", "l", "", ""]
+
+        entry = RecentTradeEntry.from_array(trade_array)
+
+        assert entry.trade_id is None
+
+    def test_from_array_invalid_length_too_short(self):
+        """Test that array with too few elements raises error"""
+        trade_array = ["50000.50", "1.5", 1616663618.0, "b", "m", ""]
+
+        with pytest.raises(ValueError, match="exactly 7 elements"):
+            RecentTradeEntry.from_array(trade_array)
+
+    def test_from_array_invalid_length_too_long(self):
+        """Test that array with too many elements raises error"""
+        trade_array = ["50000.50", "1.5", 1616663618.0, "b", "m", "", 123, "extra"]
+
+        with pytest.raises(ValueError, match="exactly 7 elements"):
+            RecentTradeEntry.from_array(trade_array)
+
+    def test_direct_instantiation(self):
+        """Test creating RecentTradeEntry directly"""
+        entry = RecentTradeEntry(
+            price="51000.25",
+            volume="3.5",
+            time=1616663620.9876,
+            buy_sell="s",
+            market_limit="m",
+            miscellaneous="test",
+            trade_id=789012,
+        )
+
+        assert entry.price == "51000.25"
+        assert entry.volume == "3.5"
+        assert entry.time == 1616663620.9876
+        assert entry.buy_sell == "s"
+        assert entry.market_limit == "m"
+        assert entry.miscellaneous == "test"
+        assert entry.trade_id == 789012
+
+    def test_precision_preservation(self):
+        """Test that price/volume precision is preserved as strings"""
+        trade_array = ["50123.123456789012345", "1.987654321098765", 1616663618.0, "b", "l", "", 1]
+
+        entry = RecentTradeEntry.from_array(trade_array)
+
+        assert entry.price == "50123.123456789012345"
+        assert entry.volume == "1.987654321098765"
+
+
+class TestGetRecentTradesRequest:
+    """Tests for GetRecentTradesRequest schema"""
+
+    def test_minimal_valid_request(self):
+        """Test creating a minimal valid request with pair only"""
+        request = GetRecentTradesRequest(pair="XBTUSD")
+
+        assert request.pair == "XBTUSD"
+        assert request.since is None
+        assert request.count is None
+        assert request.asset_class is None
+
+    def test_request_with_all_parameters(self):
+        """Test creating request with all optional parameters"""
+        request = GetRecentTradesRequest(
+            pair="ETHUSD",
+            since="1616663618",
+            count=500,
+            asset_class="tokenized_asset",
+        )
+
+        assert request.pair == "ETHUSD"
+        assert request.since == "1616663618"
+        assert request.count == 500
+        assert request.asset_class == "tokenized_asset"
+
+    def test_count_validation_min(self):
+        """Test count minimum validation (must be >= 1)"""
+        request = GetRecentTradesRequest(pair="XBTUSD", count=1)
+        assert request.count == 1
+
+    def test_count_validation_max(self):
+        """Test count maximum validation (must be <= 1000)"""
+        request = GetRecentTradesRequest(pair="XBTUSD", count=1000)
+        assert request.count == 1000
+
+    def test_count_validation_too_small(self):
+        """Test that count less than 1 raises error"""
+        with pytest.raises(ValidationError, match="between 1 and 1000"):
+            GetRecentTradesRequest(pair="XBTUSD", count=0)
+
+    def test_count_validation_negative(self):
+        """Test that negative count raises error"""
+        with pytest.raises(ValidationError, match="between 1 and 1000"):
+            GetRecentTradesRequest(pair="XBTUSD", count=-1)
+
+    def test_count_validation_too_large(self):
+        """Test that count greater than 1000 raises error"""
+        with pytest.raises(ValidationError, match="between 1 and 1000"):
+            GetRecentTradesRequest(pair="XBTUSD", count=1001)
+
+    def test_count_validation_way_too_large(self):
+        """Test that extremely large count raises error"""
+        with pytest.raises(ValidationError, match="between 1 and 1000"):
+            GetRecentTradesRequest(pair="XBTUSD", count=10000)
+
+    def test_to_api_dict_minimal(self):
+        """Test to_api_dict() with minimal parameters"""
+        request = GetRecentTradesRequest(pair="XBTUSD")
+        data = request.to_api_dict()
+
+        assert "pair" in data
+        assert data["pair"] == "XBTUSD"
+        # None values should be excluded
+        assert "since" not in data
+        assert "count" not in data
+        assert "asset_class" not in data
+
+    def test_to_api_dict_with_all_params(self):
+        """Test to_api_dict() with all parameters"""
+        request = GetRecentTradesRequest(
+            pair="ETHUSD",
+            since="1616663618",
+            count=250,
+            asset_class="tokenized_asset",
+        )
+        data = request.to_api_dict()
+
+        assert data["pair"] == "ETHUSD"
+        assert data["since"] == "1616663618"
+        assert data["count"] == 250
+        assert data["asset_class"] == "tokenized_asset"
+
+    def test_to_api_dict_exclude_none_false(self):
+        """Test to_api_dict() with exclude_none=False"""
+        request = GetRecentTradesRequest(pair="XBTUSD")
+        data = request.to_api_dict(exclude_none=False)
+
+        assert "since" in data
+        assert data["since"] is None
+        assert "count" in data
+        assert data["count"] is None
+
+    def test_tokenized_asset_request(self):
+        """Test request for tokenized asset"""
+        request = GetRecentTradesRequest(
+            pair="TSLA/USD",
+            asset_class="tokenized_asset",
+            count=100,
+        )
+
+        assert request.pair == "TSLA/USD"
+        assert request.asset_class == "tokenized_asset"
+        assert request.count == 100
+
+
+class TestGetRecentTradesResponse:
+    """Tests for GetRecentTrades response schemas"""
+
+    def test_success_response_single_pair(self):
+        """Test parsing successful response for single pair"""
+        kraken_response = {
+            "error": [],
+            "result": {
+                "XXBTZUSD": [
+                    ["50000.00", "1.5", 1616663618.1234, "b", "m", "", 123456],
+                    ["50001.00", "0.5", 1616663619.5678, "s", "l", "", 123457],
+                ],
+                "last": "1616663619567800000",
+            },
+        }
+
+        response = GetRecentTradesResponse.from_response(kraken_response)
+
+        assert response.is_success is True
+        assert response.success is not None
+        assert response.failure is None
+        assert response.success.last == "1616663619567800000"
+        assert "XXBTZUSD" in response.success.trades
+
+        trades = response.success.trades["XXBTZUSD"]
+        assert len(trades) == 2
+        assert trades[0].price == "50000.00"
+        assert trades[0].volume == "1.5"
+        assert trades[0].buy_sell == "b"
+        assert trades[1].price == "50001.00"
+        assert trades[1].volume == "0.5"
+        assert trades[1].buy_sell == "s"
+
+    def test_success_response_multiple_pairs(self):
+        """Test parsing successful response with multiple pairs"""
+        kraken_response = {
+            "error": [],
+            "result": {
+                "XXBTZUSD": [
+                    ["50000.00", "1.0", 1616663618.0, "b", "m", "", 123456],
+                ],
+                "XETHZUSD": [
+                    ["2000.00", "5.0", 1616663620.0, "s", "l", "", 123458],
+                ],
+                "last": "1616663620000000000",
+            },
+        }
+
+        response = GetRecentTradesResponse.from_response(kraken_response)
+
+        assert response.is_success is True
+        assert len(response.success.trades) == 2
+        assert "XXBTZUSD" in response.success.trades
+        assert "XETHZUSD" in response.success.trades
+        assert response.success.last == "1616663620000000000"
+
+    def test_success_response_many_trades(self):
+        """Test parsing response with many trades"""
+        # Create 100 trade entries
+        trades_array = []
+        for i in range(100):
+            trades_array.append([f"{50000 + i}.00", "1.0", 1616663618.0 + i, "b", "m", "", i])
+
+        kraken_response = {
+            "error": [],
+            "result": {
+                "XXBTZUSD": trades_array,
+                "last": "1616663718000000000",
+            },
+        }
+
+        response = GetRecentTradesResponse.from_response(kraken_response)
+
+        assert response.is_success is True
+        assert len(response.success.trades["XXBTZUSD"]) == 100
+        assert response.success.trades["XXBTZUSD"][0].price == "50000.00"
+        assert response.success.trades["XXBTZUSD"][99].price == "50099.00"
+
+    def test_success_response_from_json_string(self):
+        """Test parsing from JSON string"""
+        json_response = json.dumps(
+            {
+                "error": [],
+                "result": {
+                    "XXBTZUSD": [
+                        ["50000.00", "1.0", 1616663618.0, "b", "m", "", 123456],
+                    ],
+                    "last": "1616663618000000000",
+                },
+            }
+        )
+
+        response = GetRecentTradesResponse.from_response(json_response)
+
+        assert response.is_success is True
+        assert len(response.success.trades["XXBTZUSD"]) == 1
+
+    def test_success_response_with_none_trade_ids(self):
+        """Test parsing response with null trade IDs"""
+        kraken_response = {
+            "error": [],
+            "result": {
+                "XXBTZUSD": [
+                    ["50000.00", "1.0", 1616663618.0, "b", "m", "", None],
+                    ["50001.00", "0.5", 1616663619.0, "s", "l", "misc", None],
+                ],
+                "last": "1616663619000000000",
+            },
+        }
+
+        response = GetRecentTradesResponse.from_response(kraken_response)
+
+        assert response.is_success is True
+        trades = response.success.trades["XXBTZUSD"]
+        assert trades[0].trade_id is None
+        assert trades[1].trade_id is None
+
+    def test_error_response_single_error(self):
+        """Test parsing error response with single error"""
+        kraken_response = {
+            "error": ["EGeneral:Invalid arguments"],
+        }
+
+        response = GetRecentTradesResponse.from_response(kraken_response)
+
+        assert response.is_success is False
+        assert response.success is None
+        assert response.failure is not None
+        assert "EGeneral:Invalid arguments" in response.failure.error
+
+    def test_error_response_multiple_errors(self):
+        """Test parsing error response with multiple errors"""
+        kraken_response = {
+            "error": [
+                "EGeneral:Invalid arguments",
+                "EQuery:Unknown asset pair",
+            ],
+        }
+
+        response = GetRecentTradesResponse.from_response(kraken_response)
+
+        assert response.is_success is False
+        assert len(response.failure.error) == 2
+        assert "EGeneral:Invalid arguments" in response.failure.error
+        assert "EQuery:Unknown asset pair" in response.failure.error
+
+    def test_invalid_response_missing_result(self):
+        """Test that response missing 'result' raises error"""
+        invalid_response = {"error": []}
+
+        with pytest.raises(ValueError, match="missing 'result'"):
+            GetRecentTradesResponse.from_response(invalid_response)
+
+    def test_invalid_response_missing_last(self):
+        """Test that response missing 'last' field raises error"""
+        invalid_response = {
+            "error": [],
+            "result": {
+                "XXBTZUSD": [
+                    ["50000.00", "1.0", 1616663618.0, "b", "m", "", 123456],
+                ],
+            },
+        }
+
+        with pytest.raises(ValueError, match="missing 'last'"):
+            GetRecentTradesResponse.from_response(invalid_response)
+
+    def test_success_model_direct_instantiation(self):
+        """Test creating GetRecentTradesSuccess directly"""
+        trade = RecentTradeEntry(
+            price="50000.00",
+            volume="1.0",
+            time=1616663618.0,
+            buy_sell="b",
+            market_limit="m",
+            miscellaneous="",
+            trade_id=123456,
+        )
+
+        success = GetRecentTradesSuccess(
+            trades={"XXBTZUSD": [trade]},
+            last="1616663618000000000",
+        )
+
+        assert len(success.trades["XXBTZUSD"]) == 1
+        assert success.last == "1616663618000000000"
+        assert success.trades["XXBTZUSD"][0].price == "50000.00"
+
+    def test_response_wrapper_direct_instantiation(self):
+        """Test creating GetRecentTradesResponse wrapper directly"""
+        from kraken.rest.schema.trading import ResponseErrorSchema
+
+        success = GetRecentTradesSuccess(
+            trades={},
+            last="1616663618000000000",
+        )
+        response = GetRecentTradesResponse(success=success)
+
+        assert response.is_success is True
+        assert response.success.last == "1616663618000000000"
+
+        error = ResponseErrorSchema(error=["Test error"])
+        response2 = GetRecentTradesResponse(failure=error)
+
+        assert response2.is_success is False
+        assert response2.failure.error[0] == "Test error"
+
+    def test_precision_preservation(self):
+        """Test that price/volume precision is preserved"""
+        kraken_response = {
+            "error": [],
+            "result": {
+                "XXBTZUSD": [
+                    [
+                        "50123.123456789012345",
+                        "1.987654321098765",
+                        1616663618.123456,
+                        "b",
+                        "l",
+                        "",
+                        1,
+                    ],
+                ],
+                "last": "1616663618123456000",
+            },
+        }
+
+        response = GetRecentTradesResponse.from_response(kraken_response)
+
+        trade = response.success.trades["XXBTZUSD"][0]
+        assert trade.price == "50123.123456789012345"
+        assert trade.volume == "1.987654321098765"
+        assert trade.time == 1616663618.123456
+
+    def test_empty_trades_array(self):
+        """Test parsing response with empty trades array"""
+        kraken_response = {
+            "error": [],
+            "result": {
+                "XXBTZUSD": [],
+                "last": "1616663618000000000",
+            },
+        }
+
+        response = GetRecentTradesResponse.from_response(kraken_response)
+
+        assert response.is_success is True
+        assert len(response.success.trades["XXBTZUSD"]) == 0
+        assert response.success.last == "1616663618000000000"

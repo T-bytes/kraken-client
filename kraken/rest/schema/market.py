@@ -1174,3 +1174,213 @@ class GetOrderBookResponse(BaseResponseWrapper[GetOrderBookSuccess]):
 
         success_data = GetOrderBookSuccess(order_books=order_books)
         return cls(success=success_data)
+
+
+class RecentTradeEntry(BaseSchema):
+    """Individual trade entry from Kraken API.
+
+    Represents a single executed trade with price, volume, timestamp,
+    trade direction, order type, and miscellaneous information.
+    All price and volume values are returned as strings for precision.
+    """
+
+    price: str = Field(
+        ...,
+        description="Trade price. Price as string for precision.",
+    )
+    volume: str = Field(
+        ...,
+        description="Trade volume. Volume as string for precision.",
+    )
+    time: float = Field(
+        ...,
+        description="Unix timestamp (with decimal precision for sub-second timing).",
+    )
+    buy_sell: str = Field(
+        ...,
+        description="Trade side: 'b' = buy, 's' = sell.",
+    )
+    market_limit: str = Field(
+        ...,
+        description="Order type: 'm' = market, 'l' = limit.",
+    )
+    miscellaneous: str = Field(
+        ...,
+        description="Miscellaneous information about the trade.",
+    )
+    trade_id: int | None = Field(
+        None,
+        description="Trade ID (may be None for some trades).",
+    )
+
+    @classmethod
+    def from_array(cls, data: list) -> "RecentTradeEntry":
+        """Parse trade entry from Kraken's array format.
+
+        Args:
+            data: Array in format [price, volume, time, buy/sell, market/limit, miscellaneous, trade_id]
+
+        Returns:
+            RecentTradeEntry instance
+
+        Raises:
+            ValueError: If array doesn't have exactly 7 elements
+        """
+        if len(data) != 7:
+            raise ValueError(f"Trade entry array must have exactly 7 elements, got {len(data)}")
+
+        return cls(
+            price=data[0],
+            volume=data[1],
+            time=data[2],
+            buy_sell=data[3],
+            market_limit=data[4],
+            miscellaneous=data[5],
+            trade_id=data[6] if data[6] else None,
+        )
+
+
+class GetRecentTradesRequest(BaseRequestSchema):
+    """Schema for Kraken GetRecentTrades API request.
+
+    This schema validates and prepares data for submission to Kraken's
+    GetRecentTrades (Trades) API endpoint, which retrieves the most recent
+    trades for a specific trading pair.
+
+    Important Notes:
+        - This is a public endpoint that requires no authentication.
+        - The 'pair' parameter is required.
+        - The 'since' parameter is for incremental updates - returns trades since the given ID.
+        - The 'count' parameter controls the number of trades returned (default: 1000, max: 1000).
+        - The 'asset_class' parameter is required for non-crypto pairs (e.g., tokenized assets).
+        - Use to_api_dict() to serialize for API submission.
+
+    Usage Examples:
+        Get recent trades for a single pair:
+        >>> trades_request = GetRecentTradesRequest(pair="XBTUSD")
+        >>> data = trades_request.to_api_dict()
+        >>> response = client.request("Trades", data=data)
+
+        Get specific number of trades:
+        >>> trades_request = GetRecentTradesRequest(pair="XBTUSD", count=100)
+        >>> data = trades_request.to_api_dict()
+        >>> response = client.request("Trades", data=data)
+
+        Get incremental updates since a timestamp:
+        >>> trades_request = GetRecentTradesRequest(pair="XBTUSD", since="1616663618")
+        >>> data = trades_request.to_api_dict()
+        >>> response = client.request("Trades", data=data)
+
+        Get trades for tokenized asset:
+        >>> trades_request = GetRecentTradesRequest(
+        ...     pair="TSLA/USD",
+        ...     asset_class="tokenized_asset",
+        ...     count=500
+        ... )
+        >>> response = client.request("Trades", data=trades_request.to_api_dict())
+
+        Async usage:
+        >>> trades_request = GetRecentTradesRequest(pair="XBTUSD", count=50)
+        >>> response = await client.arequest("Trades", data=trades_request.to_api_dict())
+    """
+
+    pair: str = Field(
+        ...,
+        description="Asset pair to get data for (e.g., 'XBTUSD').",
+    )
+    since: str | None = Field(
+        default=None,
+        description="Return trade data since given timestamp. Unix timestamp as string.",
+    )
+    count: int | None = Field(
+        default=None,
+        ge=1,
+        le=1000,
+        description="Return specific number of trades (default 1000, max 1000).",
+    )
+    asset_class: str | None = Field(
+        default=None,
+        description="Asset class filter. Required for tokenized pairs (e.g., xstocks). Use 'tokenized_asset' for xstocks.",
+    )
+
+    @field_validator("count", mode="before")
+    @classmethod
+    def validate_count(cls, value: int | None) -> int | None:
+        """Validate count is within allowed range.
+
+        Args:
+            value: Count value for maximum number of trades
+
+        Returns:
+            Validated count as integer, or None if input is None
+
+        Raises:
+            ValueError: If count is not between 1 and 1000 inclusive
+        """
+        return validators.validate_recent_trades_count(value)
+
+
+class GetRecentTradesSuccess(BaseSchema):
+    """Successful GetRecentTrades response from Kraken API.
+
+    Contains a dictionary of trades keyed by pair name, with each value
+    containing an array of trade entries for that trading pair. Also includes
+    the 'last' timestamp for incremental polling.
+    """
+
+    trades: dict[str, list[RecentTradeEntry]] = Field(
+        default_factory=dict,
+        description="Dictionary mapping asset pair names to their trade arrays.",
+    )
+    last: str = Field(
+        ...,
+        description="ID to be used as 'since' when polling for new trade data.",
+    )
+
+
+class GetRecentTradesResponse(BaseResponseWrapper[GetRecentTradesSuccess]):
+    """Combined response wrapper for GetRecentTrades API calls.
+
+    This wrapper handles both success and error cases from the Kraken API.
+    Use the `is_success` property to determine the outcome and access the
+    appropriate `success` or `error` attribute.
+    """
+
+    @classmethod
+    def from_response(cls, response: dict | str) -> "GetRecentTradesResponse":
+        """Parse a Kraken API response into the appropriate response model.
+
+        Args:
+            response: Either a JSON string or dict containing the API response
+
+        Returns:
+            GetRecentTradesResponse with either success or error data populated
+
+        Raises:
+            ValueError: If the response format is invalid
+        """
+        if isinstance(response, str):
+            response = json.loads(response)
+        errors = response.get("error", [])
+        if errors:
+            error_data = ResponseErrorSchema(error=errors)
+            return cls(failure=error_data)
+        result = response.get("result")
+        if result is None:
+            raise ValueError("Response missing 'result' field")
+
+        # Extract 'last' field
+        last = result.get("last")
+        if last is None:
+            raise ValueError("Response result missing 'last' field")
+
+        # Parse trade data for each pair (all keys except 'last')
+        trades = {}
+        for pair_name, trade_data in result.items():
+            if pair_name == "last":
+                continue
+            # Parse array of trade arrays into list of RecentTradeEntry objects
+            trades[pair_name] = [RecentTradeEntry.from_array(trade) for trade in trade_data]
+
+        success_data = GetRecentTradesSuccess(trades=trades, last=last)
+        return cls(success=success_data)
