@@ -984,3 +984,193 @@ class GetOHLCDataResponse(BaseResponseWrapper[GetOHLCDataSuccess]):
 
         success_data = GetOHLCDataSuccess(ohlc_data=ohlc_data, last=last)
         return cls(success=success_data)
+
+
+class OrderBookEntry(BaseSchema):
+    """Individual order book entry (ask or bid) from Kraken API.
+
+    Represents a single price level in the order book with price, volume,
+    and timestamp information. All price and volume values are returned
+    as strings for precision.
+    """
+
+    price: str = Field(
+        ...,
+        description="Price level. Price as string for precision.",
+    )
+    volume: str = Field(
+        ...,
+        description="Volume at price level. Volume as string for precision.",
+    )
+    timestamp: int = Field(
+        ...,
+        description="Unix timestamp when the entry was added.",
+    )
+
+    @classmethod
+    def from_array(cls, data: list) -> "OrderBookEntry":
+        """Parse order book entry from Kraken's array format.
+
+        Args:
+            data: Array in format [price, volume, timestamp]
+
+        Returns:
+            OrderBookEntry instance
+
+        Raises:
+            ValueError: If array doesn't have exactly 3 elements
+        """
+        if len(data) != 3:
+            raise ValueError(
+                f"Order book entry array must have exactly 3 elements, got {len(data)}"
+            )
+
+        return cls(
+            price=data[0],
+            volume=data[1],
+            timestamp=data[2],
+        )
+
+
+class OrderBook(BaseSchema):
+    """Order book data for a trading pair from Kraken API.
+
+    Contains ask and bid sides of the order book with arrays of price levels.
+    Each entry includes price, volume, and timestamp information.
+    """
+
+    asks: list[OrderBookEntry] = Field(
+        default_factory=list,
+        description="Ask side array of entries [<price>, <volume>, <timestamp>].",
+    )
+    bids: list[OrderBookEntry] = Field(
+        default_factory=list,
+        description="Bid side array of entries [<price>, <volume>, <timestamp>].",
+    )
+
+
+class GetOrderBookRequest(BaseRequestSchema):
+    """Schema for Kraken GetOrderBook API request.
+
+    This schema validates and prepares data for submission to Kraken's
+    GetOrderBook (Depth) API endpoint, which retrieves the order book
+    (market depth) for a specific trading pair.
+
+    Important Notes:
+        - This is a public endpoint that requires no authentication.
+        - The 'pair' parameter is required.
+        - The 'count' parameter controls the number of asks/bids returned (default: 100, max: 500).
+        - The 'asset_class' parameter is required for non-crypto pairs (e.g., tokenized assets).
+        - Use to_api_dict() to serialize for API submission.
+
+    Usage Examples:
+        Get order book for a single pair (default count):
+        >>> order_book_request = GetOrderBookRequest(pair="XBTUSD")
+        >>> data = order_book_request.to_api_dict()
+        >>> response = client.request("Depth", data=data)
+
+        Get order book with specific depth:
+        >>> order_book_request = GetOrderBookRequest(pair="XBTUSD", count=10)
+        >>> data = order_book_request.to_api_dict()
+        >>> response = client.request("Depth", data=data)
+
+        Get order book for tokenized asset:
+        >>> order_book_request = GetOrderBookRequest(
+        ...     pair="TSLA/USD",
+        ...     asset_class="tokenized_asset",
+        ...     count=50
+        ... )
+        >>> response = client.request("Depth", data=order_book_request.to_api_dict())
+
+        Get maximum depth (500 levels):
+        >>> order_book_request = GetOrderBookRequest(pair="ETHUSD", count=500)
+        >>> data = order_book_request.to_api_dict()
+        >>> response = client.request("Depth", data=data)
+
+        Async usage:
+        >>> order_book_request = GetOrderBookRequest(pair="XBTUSD", count=25)
+        >>> response = await client.arequest("Depth", data=order_book_request.to_api_dict())
+    """
+
+    pair: str = Field(
+        ...,
+        description="Asset pair to get data for (e.g., 'XBTUSD').",
+    )
+    count: int | None = Field(
+        default=None, ge=1, le=500, description="Maximum number of asks/bids to retrieve."
+    )
+    asset_class: Literal["tokenized_asset"] | None = Field(
+        default=None,
+        description="Asset class filter. Required for tokenized pairs (e.g., xstocks).",
+    )
+
+    @field_validator("count", mode="before")
+    @classmethod
+    def validate_count(cls, value: int | None) -> int | None:
+        """Validate count is within allowed range.
+
+        Args:
+            value: Count value for maximum number of asks/bids
+
+        Returns:
+            Validated count as integer, or None if input is None
+
+        Raises:
+            ValueError: If count is not between 1 and 500 inclusive
+        """
+        return validators.validate_order_book_count(value)
+
+
+class GetOrderBookSuccess(BaseSchema):
+    """Successful GetOrderBook response from Kraken API.
+
+    Contains a dictionary of order books keyed by pair name, with each value
+    containing ask and bid arrays for that trading pair.
+    """
+
+    order_books: dict[str, OrderBook] = Field(
+        default_factory=dict,
+        description="Dictionary mapping asset pair names to their order book data.",
+    )
+
+
+class GetOrderBookResponse(BaseResponseWrapper[GetOrderBookSuccess]):
+    """Combined response wrapper for GetOrderBook API calls.
+
+    This wrapper handles both success and error cases from the Kraken API.
+    Use the `is_success` property to determine the outcome and access the
+    appropriate `success` or `error` attribute.
+    """
+
+    @classmethod
+    def from_response(cls, response: dict | str) -> "GetOrderBookResponse":
+        """Parse a Kraken API response into the appropriate response model.
+
+        Args:
+            response: Either a JSON string or dict containing the API response
+
+        Returns:
+            GetOrderBookResponse with either success or error data populated
+
+        Raises:
+            ValueError: If the response format is invalid
+        """
+        if isinstance(response, str):
+            response = json.loads(response)
+        errors = response.get("error", [])
+        if errors:
+            error_data = ResponseErrorSchema(error=errors)
+            return cls(failure=error_data)
+        result = response.get("result")
+        if result is None:
+            raise ValueError("Response missing 'result' field")
+
+        # Parse order book data for each pair
+        order_books = {}
+        for pair_name, book_data in result.items():
+            asks = [OrderBookEntry.from_array(entry) for entry in book_data.get("asks", [])]
+            bids = [OrderBookEntry.from_array(entry) for entry in book_data.get("bids", [])]
+            order_books[pair_name] = OrderBook(asks=asks, bids=bids)
+
+        success_data = GetOrderBookSuccess(order_books=order_books)
+        return cls(success=success_data)

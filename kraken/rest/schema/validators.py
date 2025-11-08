@@ -308,3 +308,23 @@ def validate_ohlc_interval(value: int | None) -> int | None:
     if value not in OHLC_INTERVAL_VALUES:
         raise ValueError(f"Interval must be one of {sorted(OHLC_INTERVAL_VALUES)}, got {value}")
     return value
+
+
+def validate_order_book_count(value: int | None) -> int | None:
+    """Validate order book count is within allowed range.
+
+    Args:
+        value: Count value for maximum number of asks/bids
+
+    Returns:
+        Validated count as integer, or None if input is None
+
+    Raises:
+        ValueError: If count is not between 1 and 500 inclusive
+    """
+    if value is None:
+        return None
+
+    if value < 1 or value > 500:
+        raise ValueError(f"Count must be between 1 and 500, got {value}")
+    return value

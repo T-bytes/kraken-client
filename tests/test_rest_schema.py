@@ -18,6 +18,9 @@ from kraken.rest.schema.market import (
     GetOHLCDataRequest,
     GetOHLCDataResponse,
     GetOHLCDataSuccess,
+    GetOrderBookRequest,
+    GetOrderBookResponse,
+    GetOrderBookSuccess,
     GetServerTimeRequest,
     GetServerTimeResponse,
     GetServerTimeSuccess,
@@ -28,6 +31,8 @@ from kraken.rest.schema.market import (
     GetTickerInformationResponse,
     GetTickerInformationSuccess,
     OHLCData,
+    OrderBook,
+    OrderBookEntry,
     TickerInfo,
 )
 from kraken.rest.schema.trading import (
@@ -6535,3 +6540,474 @@ class TestGetOHLCDataResponse:
         response_failure = GetOHLCDataResponse(failure=error)
 
         assert response_failure.is_success is False
+
+
+class TestOrderBookEntry:
+    """Tests for OrderBookEntry schema"""
+
+    def test_valid_order_book_entry(self):
+        """Test creating a valid order book entry"""
+        entry = OrderBookEntry(
+            price="50000.00",
+            volume="1.5",
+            timestamp=1688671200,
+        )
+
+        assert entry.price == "50000.00"
+        assert entry.volume == "1.5"
+        assert entry.timestamp == 1688671200
+
+    def test_from_array_valid(self):
+        """Test parsing order book entry from array"""
+        data = ["50000.00", "1.5", 1688671200]
+        entry = OrderBookEntry.from_array(data)
+
+        assert entry.price == "50000.00"
+        assert entry.volume == "1.5"
+        assert entry.timestamp == 1688671200
+
+    def test_from_array_invalid_length(self):
+        """Test that invalid array length raises error"""
+        # Too few elements
+        with pytest.raises(ValueError, match="exactly 3 elements"):
+            OrderBookEntry.from_array(["50000.00", "1.5"])
+
+        # Too many elements
+        with pytest.raises(ValueError, match="exactly 3 elements"):
+            OrderBookEntry.from_array(["50000.00", "1.5", 1688671200, "extra"])
+
+    def test_price_volume_as_strings(self):
+        """Test that prices and volumes are stored as strings for precision"""
+        entry = OrderBookEntry(
+            price="50000.123456789",
+            volume="1.123456789012345",
+            timestamp=1688671200,
+        )
+
+        assert isinstance(entry.price, str)
+        assert isinstance(entry.volume, str)
+        assert entry.price == "50000.123456789"
+        assert entry.volume == "1.123456789012345"
+
+
+class TestOrderBook:
+    """Tests for OrderBook schema"""
+
+    def test_empty_order_book(self):
+        """Test creating an empty order book"""
+        book = OrderBook()
+
+        assert book.asks == []
+        assert book.bids == []
+
+    def test_order_book_with_entries(self):
+        """Test creating an order book with asks and bids"""
+        asks = [
+            OrderBookEntry(price="50100.00", volume="1.0", timestamp=1688671200),
+            OrderBookEntry(price="50200.00", volume="2.0", timestamp=1688671201),
+        ]
+        bids = [
+            OrderBookEntry(price="50000.00", volume="1.5", timestamp=1688671200),
+            OrderBookEntry(price="49900.00", volume="2.5", timestamp=1688671201),
+        ]
+
+        book = OrderBook(asks=asks, bids=bids)
+
+        assert len(book.asks) == 2
+        assert len(book.bids) == 2
+        assert book.asks[0].price == "50100.00"
+        assert book.bids[0].price == "50000.00"
+
+    def test_order_book_only_asks(self):
+        """Test order book with only asks"""
+        asks = [
+            OrderBookEntry(price="50100.00", volume="1.0", timestamp=1688671200),
+        ]
+
+        book = OrderBook(asks=asks)
+
+        assert len(book.asks) == 1
+        assert book.bids == []
+
+    def test_order_book_only_bids(self):
+        """Test order book with only bids"""
+        bids = [
+            OrderBookEntry(price="50000.00", volume="1.5", timestamp=1688671200),
+        ]
+
+        book = OrderBook(bids=bids)
+
+        assert book.asks == []
+        assert len(book.bids) == 1
+
+
+class TestGetOrderBookRequest:
+    """Tests for GetOrderBookRequest schema"""
+
+    def test_minimal_valid_request(self):
+        """Test creating a minimal valid order book request"""
+        request = GetOrderBookRequest(pair="XBTUSD")
+
+        assert request.pair == "XBTUSD"
+        assert request.count is None
+        assert request.asset_class is None
+
+    def test_request_with_count(self):
+        """Test creating request with specific count"""
+        request = GetOrderBookRequest(pair="XBTUSD", count=10)
+
+        assert request.pair == "XBTUSD"
+        assert request.count == 10
+
+    def test_request_with_max_count(self):
+        """Test creating request with maximum count"""
+        request = GetOrderBookRequest(pair="XBTUSD", count=500)
+
+        assert request.count == 500
+
+    def test_request_with_min_count(self):
+        """Test creating request with minimum count"""
+        request = GetOrderBookRequest(pair="XBTUSD", count=1)
+
+        assert request.count == 1
+
+    def test_count_validation_too_small(self):
+        """Test that count below minimum raises error"""
+        with pytest.raises(ValidationError, match="between 1 and 500"):
+            GetOrderBookRequest(pair="XBTUSD", count=0)
+
+        with pytest.raises(ValidationError, match="between 1 and 500"):
+            GetOrderBookRequest(pair="XBTUSD", count=-1)
+
+    def test_count_validation_too_large(self):
+        """Test that count above maximum raises error"""
+        with pytest.raises(ValidationError, match="between 1 and 500"):
+            GetOrderBookRequest(pair="XBTUSD", count=501)
+
+        with pytest.raises(ValidationError, match="between 1 and 500"):
+            GetOrderBookRequest(pair="XBTUSD", count=1000)
+
+    def test_request_with_tokenized_asset(self):
+        """Test creating request for tokenized asset"""
+        request = GetOrderBookRequest(
+            pair="TSLA/USD",
+            asset_class="tokenized_asset",
+            count=50,
+        )
+
+        assert request.pair == "TSLA/USD"
+        assert request.asset_class == "tokenized_asset"
+        assert request.count == 50
+
+    def test_to_api_dict_minimal(self):
+        """Test to_api_dict() with minimal request"""
+        request = GetOrderBookRequest(pair="XBTUSD")
+        data = request.to_api_dict()
+
+        assert data["pair"] == "XBTUSD"
+        assert "count" not in data
+        assert "asset_class" not in data
+
+    def test_to_api_dict_with_count(self):
+        """Test to_api_dict() with count"""
+        request = GetOrderBookRequest(pair="XBTUSD", count=25)
+        data = request.to_api_dict()
+
+        assert data["pair"] == "XBTUSD"
+        assert data["count"] == 25
+
+    def test_to_api_dict_with_all_fields(self):
+        """Test to_api_dict() with all fields"""
+        request = GetOrderBookRequest(
+            pair="TSLA/USD",
+            count=100,
+            asset_class="tokenized_asset",
+        )
+        data = request.to_api_dict()
+
+        assert data["pair"] == "TSLA/USD"
+        assert data["count"] == 100
+        assert data["asset_class"] == "tokenized_asset"
+
+    def test_various_pair_formats(self):
+        """Test various pair format strings"""
+        # Standard crypto pair
+        request1 = GetOrderBookRequest(pair="XBTUSD")
+        assert request1.pair == "XBTUSD"
+
+        # Pair with slash
+        request2 = GetOrderBookRequest(pair="BTC/USD")
+        assert request2.pair == "BTC/USD"
+
+        # Tokenized asset
+        request3 = GetOrderBookRequest(pair="TSLA/USD")
+        assert request3.pair == "TSLA/USD"
+
+        # Alternate format
+        request4 = GetOrderBookRequest(pair="XXBTZUSD")
+        assert request4.pair == "XXBTZUSD"
+
+
+class TestGetOrderBookResponse:
+    """Tests for GetOrderBook response schemas"""
+
+    def test_success_response_parsing(self):
+        """Test parsing a successful order book response"""
+        kraken_response = {
+            "error": [],
+            "result": {
+                "XXBTZUSD": {
+                    "asks": [
+                        ["50100.00000", "1.000", 1688671200],
+                        ["50200.00000", "2.000", 1688671201],
+                        ["50300.00000", "1.500", 1688671202],
+                    ],
+                    "bids": [
+                        ["50000.00000", "1.500", 1688671200],
+                        ["49900.00000", "2.500", 1688671201],
+                        ["49800.00000", "3.000", 1688671202],
+                    ],
+                }
+            },
+        }
+
+        response = GetOrderBookResponse.from_response(kraken_response)
+
+        assert response.is_success is True
+        assert response.success is not None
+        assert response.failure is None
+        assert "XXBTZUSD" in response.success.order_books
+
+        book = response.success.order_books["XXBTZUSD"]
+        assert len(book.asks) == 3
+        assert len(book.bids) == 3
+        assert book.asks[0].price == "50100.00000"
+        assert book.asks[0].volume == "1.000"
+        assert book.asks[0].timestamp == 1688671200
+        assert book.bids[0].price == "50000.00000"
+        assert book.bids[0].volume == "1.500"
+        assert book.bids[0].timestamp == 1688671200
+
+    def test_success_response_multiple_pairs(self):
+        """Test parsing response with multiple trading pairs"""
+        kraken_response = {
+            "error": [],
+            "result": {
+                "XXBTZUSD": {
+                    "asks": [["50100.00", "1.0", 1688671200]],
+                    "bids": [["50000.00", "1.5", 1688671200]],
+                },
+                "XETHZUSD": {
+                    "asks": [["2100.00", "10.0", 1688671200]],
+                    "bids": [["2090.00", "15.0", 1688671200]],
+                },
+            },
+        }
+
+        response = GetOrderBookResponse.from_response(kraken_response)
+
+        assert response.is_success is True
+        assert len(response.success.order_books) == 2
+        assert "XXBTZUSD" in response.success.order_books
+        assert "XETHZUSD" in response.success.order_books
+
+        btc_book = response.success.order_books["XXBTZUSD"]
+        assert len(btc_book.asks) == 1
+        assert len(btc_book.bids) == 1
+
+        eth_book = response.success.order_books["XETHZUSD"]
+        assert len(eth_book.asks) == 1
+        assert len(eth_book.bids) == 1
+
+    def test_success_response_empty_order_book(self):
+        """Test parsing response with empty order book"""
+        kraken_response = {
+            "error": [],
+            "result": {
+                "XXBTZUSD": {
+                    "asks": [],
+                    "bids": [],
+                }
+            },
+        }
+
+        response = GetOrderBookResponse.from_response(kraken_response)
+
+        assert response.is_success is True
+        book = response.success.order_books["XXBTZUSD"]
+        assert book.asks == []
+        assert book.bids == []
+
+    def test_success_response_only_asks(self):
+        """Test parsing response with only asks"""
+        kraken_response = {
+            "error": [],
+            "result": {
+                "XXBTZUSD": {
+                    "asks": [["50100.00", "1.0", 1688671200]],
+                    "bids": [],
+                }
+            },
+        }
+
+        response = GetOrderBookResponse.from_response(kraken_response)
+
+        assert response.is_success is True
+        book = response.success.order_books["XXBTZUSD"]
+        assert len(book.asks) == 1
+        assert book.bids == []
+
+    def test_success_response_only_bids(self):
+        """Test parsing response with only bids"""
+        kraken_response = {
+            "error": [],
+            "result": {
+                "XXBTZUSD": {
+                    "asks": [],
+                    "bids": [["50000.00", "1.5", 1688671200]],
+                }
+            },
+        }
+
+        response = GetOrderBookResponse.from_response(kraken_response)
+
+        assert response.is_success is True
+        book = response.success.order_books["XXBTZUSD"]
+        assert book.asks == []
+        assert len(book.bids) == 1
+
+    def test_error_response_parsing(self):
+        """Test parsing an error response"""
+        kraken_response = {
+            "error": ["EQuery:Unknown asset pair"],
+        }
+
+        response = GetOrderBookResponse.from_response(kraken_response)
+
+        assert response.is_success is False
+        assert response.success is None
+        assert response.failure is not None
+        assert "EQuery:Unknown asset pair" in response.failure.error
+
+    def test_multiple_errors(self):
+        """Test parsing response with multiple errors"""
+        kraken_response = {
+            "error": [
+                "EGeneral:Invalid arguments",
+                "EQuery:Unknown asset pair",
+            ],
+        }
+
+        response = GetOrderBookResponse.from_response(kraken_response)
+
+        assert response.is_success is False
+        assert len(response.failure.error) == 2
+        assert "EGeneral:Invalid arguments" in response.failure.error
+        assert "EQuery:Unknown asset pair" in response.failure.error
+
+    def test_from_json_string(self):
+        """Test parsing from JSON string"""
+        json_response = json.dumps(
+            {
+                "error": [],
+                "result": {
+                    "XXBTZUSD": {
+                        "asks": [["50100.00", "1.0", 1688671200]],
+                        "bids": [["50000.00", "1.5", 1688671200]],
+                    }
+                },
+            }
+        )
+
+        response = GetOrderBookResponse.from_response(json_response)
+
+        assert response.is_success is True
+        assert "XXBTZUSD" in response.success.order_books
+
+    def test_invalid_response_format(self):
+        """Test that invalid response format raises appropriate error"""
+        invalid_response = {"error": []}  # Missing 'result'
+
+        with pytest.raises(ValueError, match="missing 'result'"):
+            GetOrderBookResponse.from_response(invalid_response)
+
+    def test_success_model_direct_instantiation(self):
+        """Test creating GetOrderBookSuccess directly"""
+        asks = [OrderBookEntry(price="50100.00", volume="1.0", timestamp=1688671200)]
+        bids = [OrderBookEntry(price="50000.00", volume="1.5", timestamp=1688671200)]
+        book = OrderBook(asks=asks, bids=bids)
+
+        success = GetOrderBookSuccess(order_books={"XXBTZUSD": book})
+
+        assert "XXBTZUSD" in success.order_books
+        assert len(success.order_books["XXBTZUSD"].asks) == 1
+        assert len(success.order_books["XXBTZUSD"].bids) == 1
+
+    def test_error_model_direct_instantiation(self):
+        """Test creating error response directly"""
+        error = ResponseErrorSchema(error=["EQuery:Unknown asset pair"])
+
+        assert len(error.error) == 1
+        assert error.error[0] == "EQuery:Unknown asset pair"
+
+    def test_response_wrapper_direct_instantiation(self):
+        """Test creating GetOrderBookResponse wrapper directly"""
+        asks = [OrderBookEntry(price="50100.00", volume="1.0", timestamp=1688671200)]
+        bids = [OrderBookEntry(price="50000.00", volume="1.5", timestamp=1688671200)]
+        book = OrderBook(asks=asks, bids=bids)
+        success = GetOrderBookSuccess(order_books={"XXBTZUSD": book})
+        response = GetOrderBookResponse(success=success)
+
+        assert response.is_success is True
+        assert "XXBTZUSD" in response.success.order_books
+
+        error = ResponseErrorSchema(error=["Test error"])
+        response2 = GetOrderBookResponse(failure=error)
+
+        assert response2.is_success is False
+        assert response2.failure.error[0] == "Test error"
+
+    def test_large_order_book(self):
+        """Test parsing response with maximum order book depth"""
+        # Create 500 asks and 500 bids (maximum allowed)
+        asks = [[f"{50000 + i}.00", "1.0", 1688671200 + i] for i in range(500)]
+        bids = [[f"{50000 - i}.00", "1.0", 1688671200 + i] for i in range(500)]
+
+        kraken_response = {
+            "error": [],
+            "result": {
+                "XXBTZUSD": {
+                    "asks": asks,
+                    "bids": bids,
+                }
+            },
+        }
+
+        response = GetOrderBookResponse.from_response(kraken_response)
+
+        assert response.is_success is True
+        book = response.success.order_books["XXBTZUSD"]
+        assert len(book.asks) == 500
+        assert len(book.bids) == 500
+        assert book.asks[0].price == "50000.00"
+        assert book.bids[0].price == "50000.00"
+
+    def test_precision_preservation(self):
+        """Test that price/volume precision is preserved"""
+        kraken_response = {
+            "error": [],
+            "result": {
+                "XXBTZUSD": {
+                    "asks": [["50123.456789012345", "1.123456789012345", 1688671200]],
+                    "bids": [["50000.987654321098", "2.987654321098765", 1688671200]],
+                }
+            },
+        }
+
+        response = GetOrderBookResponse.from_response(kraken_response)
+
+        book = response.success.order_books["XXBTZUSD"]
+        assert book.asks[0].price == "50123.456789012345"
+        assert book.asks[0].volume == "1.123456789012345"
+        assert book.bids[0].price == "50000.987654321098"
+        assert book.bids[0].volume == "2.987654321098765"
