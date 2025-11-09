@@ -1,4 +1,5 @@
 import json
+from abc import abstractmethod
 from typing import Any, Generic, TypeVar
 
 from pydantic import BaseModel as BaseSchema

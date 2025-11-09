@@ -1,11 +1,5 @@
 from enum import StrEnum
-
-from .schema.market import *
-from .schema.trading import *
-
-
-class KrakenEndpoint(StrEnum):
-    pass
+from typing import Type
 
 
 class KrakenChannel(StrEnum):

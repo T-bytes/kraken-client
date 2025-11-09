@@ -866,13 +866,13 @@ class GetOHLCDataRequest(BaseRequestSchema):
         >>> response = await client.arequest("OHLC", data=ohlc_request.to_api_dict())
     """
 
-    pair: str | list[str] = Field(
+    pair: str = Field(
         ...,
-        description="Comma-delimited string or list of asset pairs to get data for (e.g., 'XBTUSD' or ['XBTUSD', 'ETHUSD']).",
+        description="Asset pair to get data for (e.g., 'XBTUSD').",
     )
-    interval: int | None = Field(
+    interval: Literal[1, 5, 15, 30, 60, 240, 1440, 10080, 21600] | None = Field(
         default=None,
-        description="Time frame interval in minutes. Possible values: [1, 5, 15, 30, 60, 240, 1440, 10080, 21600]. Default: 1.",
+        description="Time frame interval in minutes. Possible values: [1, 5, 15, 30, 60, 240, 1440, 10080, 21600]. Default: 1 (if not specified).",
     )
     since: int | None = Field(
         default=None,

@@ -52,7 +52,7 @@ import hmac
 import logging
 import os
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, TypeVar, overload
 
 import httpx
 
@@ -64,8 +64,13 @@ from kraken.exceptions import (
     KrakenTimeoutError,
 )
 from kraken.rest.endpoint import KrakenChannel
-from kraken.rest.schema.trading import AddOrderRequest
+from kraken.rest.schema import *
+from kraken.rest.schema import get_endpoint_info
 from kraken.utilities import get_nonce
+
+# Type variable for generic schema-based requests
+TRequest = TypeVar("TRequest", bound=BaseRequestSchema)
+TResponse = TypeVar("TResponse", bound=BaseResponseWrapper)
 
 logger = logging.getLogger(__name__)
 
@@ -274,22 +279,35 @@ class KrakenRESTClient:
             logger.error(f"Unable to prepare order: {str(e)}")
         return data
 
+    # Overloaded signatures for type safety
+    @overload
+    def request(self, schema: TRequest, headers: Optional[Dict[str, str]] = None) -> TResponse:
+        """Make a schema-based request (returns typed response)."""
+        ...
+
+    @overload
     def request(self, endpoint: str, **kwargs) -> Dict[str, Any]:
+        """Make a string-based request (returns dict)."""
+        ...
+
+    def request(self, endpoint_or_schema, headers=None, **kwargs) -> Dict[str, Any] | TResponse:
         """Make a synchronous request to the Kraken API.
 
-        This is the main public method for synchronous interaction with the API.
-        It automatically determines the endpoint type and handles authentication.
-        Public endpoints use GET by default, private endpoints always use POST.
+        This method supports two calling patterns:
+        1. Schema-based (recommended): Pass a BaseRequestSchema instance for type-safe requests
+        2. String-based (legacy): Pass an endpoint name string with kwargs
 
         Args:
-            endpoint: API endpoint name (e.g., "Time", "Balance", "AddOrder")
-            **kwargs: Additional request parameters:
+            endpoint_or_schema: Either a BaseRequestSchema instance or endpoint name string
+            headers: Optional headers dict (for schema-based calls)
+            **kwargs: Additional request parameters (for string-based calls):
                 - params: Query parameters for GET requests
                 - data: Body parameters for POST requests
                 - headers: Additional headers
 
         Returns:
-            API response data
+            For schema-based calls: Typed BaseResponseWrapper subclass
+            For string-based calls: Dict with API response data
 
         Raises:
             ValueError: If the endpoint is unknown or authentication fails
@@ -299,85 +317,126 @@ class KrakenRESTClient:
             KrakenPayloadError: If JSON parsing fails
             KrakenAPIError: If the API returns an error response
 
-        Example:
+        Example (schema-based):
+            >>> from kraken.rest.schema.market import GetAssetInfoRequest
+            >>> request = GetAssetInfoRequest(asset=["XBT", "ETH"])
+            >>> response = client.request(request)
+            >>> if response.is_success:
+            >>>     print(response.success.assets)
+
+        Example (string-based):
             >>> client.request("Time")
             {'error': [], 'result': {'unixtime': 1234567890, 'rfc1123': '...'}}
-
-            >>> client.request("Ticker", params={"pair": "XBTUSD"})
-            {'error': [], 'result': {...}}
-
-            >>> client.request("Balance")
-            {'error': [], 'result': {...}}
         """
-        api_type = self._get_api_type(endpoint)
-        url_path = f"{api_type.path}{endpoint}"
-        url = f"{self.API_DOMAIN}{url_path}"
-        headers = kwargs.pop("headers", {})
-        client = self._get_sync_client()
+        # Detect if this is a schema-based or string-based request
+        if isinstance(endpoint_or_schema, BaseRequestSchema):
+            # Schema-based request
+            schema = endpoint_or_schema
+            endpoint, response_class = get_endpoint_info(schema)
 
-        # Send request
-        try:
-            if api_type.is_private():  # Private endpoint - requires auth and always uses POST
-                if not self.api_key or not self.api_secret:
-                    raise ValueError(
-                        "API key and secret required for private endpoints. Set `KRAKEN_API_KEY` and `KRAKEN_API_SECRET` environment variables."
-                    )
-                data = kwargs.pop("data", kwargs.pop("params", {}))
-                data = self._prepare_order_data(endpoint, data)
-                nonce = str(get_nonce())
-                data["nonce"] = nonce
-                signature = self._sign_request(url_path, data, nonce)
-                headers["API-Key"] = self.api_key
-                headers["API-Sign"] = signature
-                logger.debug(f"Making authenticated POST request to {endpoint}")
-                response = client.post(url, data=data, headers=headers, **kwargs)
-            else:  # Public endpoint - always uses GET
-                logger.debug(f"Making public GET request to {endpoint}")
-                response = client.get(url, headers=headers, **kwargs)
-            response.raise_for_status()
-        except httpx.TimeoutException as e:
-            logger.error(f"Request timeout for {endpoint}: {e}")
-            raise KrakenTimeoutError(f"Request timeout for {endpoint}: {e}") from e
-        except httpx.ConnectError as e:
-            logger.error(f"Connection error for {endpoint}: {e}")
-            raise KrakenConnectionError(f"Connection error for {endpoint}: {e}") from e
-        except httpx.HTTPStatusError as e:
-            logger.error(f"HTTP error for {endpoint}: {e}")
-            raise KrakenHTTPError(f"HTTP error for {endpoint}: {e}") from e
-        except httpx.RequestError as e:
-            logger.error(f"Request failed for {endpoint}: {e}")
-            raise
+            # Serialize schema to dict
+            data = schema.to_api_dict()
 
-        # Parse response
-        try:
-            data = response.json()
-        except ValueError as e:
-            logger.error(f"Failed to parse JSON response: {e}")
-            raise KrakenPayloadError(f"Invalid JSON response: {e}", "", 0) from e
-        if "error" in data and data["error"]:
-            error_msg = ", ".join(data["error"])
-            logger.error(f"API error for {endpoint}: {error_msg}")
-            raise KrakenAPIError(f"API error: {error_msg}")
+            # Make the request using the string-based logic, but catch API errors
+            # to wrap them in the response object instead of raising
+            raw_response = {}
+            try:
+                raw_response = self.request(endpoint, data=data, headers=headers or {})
+            except Exception as e:
+                raw_response["error"] = [str(e)]
 
-        logger.info(f"Successfully completed request to {endpoint}")
-        return data
+            # Parse and return typed response
+            return response_class.from_response(raw_response)
+        else:
+            # String-based request (legacy path)
+            endpoint = endpoint_or_schema
+            api_type = self._get_api_type(endpoint)
+            url_path = f"{api_type.path}{endpoint}"
+            url = f"{self.API_DOMAIN}{url_path}"
+            if headers is None:
+                headers = kwargs.pop("headers", {})
+            client = self._get_sync_client()
 
+            # Send request
+            try:
+                if api_type.is_private():  # Private endpoint - requires auth and always uses POST
+                    if not self.api_key or not self.api_secret:
+                        raise ValueError(
+                            "API key and secret required for private endpoints. Set `KRAKEN_API_KEY` and `KRAKEN_API_SECRET` environment variables."
+                        )
+                    data = kwargs.pop("data", kwargs.pop("params", {}))
+                    data = self._prepare_order_data(endpoint, data)
+                    nonce = str(get_nonce())
+                    data["nonce"] = nonce
+                    signature = self._sign_request(url_path, data, nonce)
+                    headers["API-Key"] = self.api_key
+                    headers["API-Sign"] = signature
+                    logger.debug(f"Making authenticated POST request to {endpoint}")
+                    response = client.post(url, data=data, headers=headers, **kwargs)
+                else:  # Public endpoint - always uses GET
+                    logger.debug(f"Making public GET request to {endpoint}")
+                    response = client.get(url, headers=headers, **kwargs)
+                response.raise_for_status()
+            except httpx.TimeoutException as e:
+                logger.error(f"Request timeout for {endpoint}: {e}")
+                raise KrakenTimeoutError(f"Request timeout for {endpoint}: {e}") from e
+            except httpx.ConnectError as e:
+                logger.error(f"Connection error for {endpoint}: {e}")
+                raise KrakenConnectionError(f"Connection error for {endpoint}: {e}") from e
+            except httpx.HTTPStatusError as e:
+                logger.error(f"HTTP error for {endpoint}: {e}")
+                raise KrakenHTTPError(f"HTTP error for {endpoint}: {e}") from e
+            except httpx.RequestError as e:
+                logger.error(f"Request failed for {endpoint}: {e}")
+                raise
+
+            # Parse response
+            try:
+                response_json = response.json()
+            except ValueError as e:
+                logger.error(f"Failed to parse JSON response: {e}")
+                raise KrakenPayloadError(f"Invalid JSON response: {e}", "", 0) from e
+            if "error" in response_json and response_json["error"]:
+                error_msg = ", ".join(response_json["error"])
+                logger.error(f"API error for {endpoint}: {error_msg}")
+                raise KrakenAPIError(f"API error: {error_msg}")
+
+            logger.info(f"Successfully completed request to {endpoint}")
+            return response_json
+
+    # Overloaded signatures for async methods
+    @overload
+    async def arequest(
+        self, schema: TRequest, headers: Optional[Dict[str, str]] = None
+    ) -> TResponse:
+        """Make an async schema-based request (returns typed response)."""
+        ...
+
+    @overload
     async def arequest(self, endpoint: str, **kwargs) -> Dict[str, Any]:
+        """Make an async string-based request (returns dict)."""
+        ...
+
+    async def arequest(
+        self, endpoint_or_schema, headers=None, **kwargs
+    ) -> Dict[str, Any] | TResponse:
         """Make an asynchronous request to the Kraken API.
 
-        This is the main public method for asynchronous interaction with the API.
-        It automatically determines the endpoint type and handles authentication.
-        Public endpoints use GET by default, private endpoints always use POST.
+        This method supports two calling patterns:
+        1. Schema-based (recommended): Pass a BaseRequestSchema instance for type-safe requests
+        2. String-based (legacy): Pass an endpoint name string with kwargs
 
         Args:
-            endpoint: API endpoint name (e.g., "Time", "Balance", "AddOrder")
-            **kwargs: Additional request parameters:
+            endpoint_or_schema: Either a BaseRequestSchema instance or endpoint name string
+            headers: Optional headers dict (for schema-based calls)
+            **kwargs: Additional request parameters (for string-based calls):
                 - params: Query parameters for GET requests
                 - data: Body parameters for POST requests
                 - headers: Additional headers
 
         Returns:
-            API response data
+            For schema-based calls: Typed BaseResponseWrapper subclass
+            For string-based calls: Dict with API response data
 
         Raises:
             ValueError: If the endpoint is unknown or authentication fails
@@ -387,65 +446,89 @@ class KrakenRESTClient:
             KrakenPayloadError: If JSON parsing fails
             KrakenAPIError: If the API returns an error response
 
-        Example:
+        Example (schema-based):
+            >>> from kraken.rest.schema.market import GetServerTimeRequest
+            >>> request = GetServerTimeRequest()
+            >>> response = await client.arequest(request)
+            >>> if response.is_success:
+            >>>     print(response.success.unixtime)
+
+        Example (string-based):
             >>> await client.arequest("Time")
             {'error': [], 'result': {'unixtime': 1234567890, 'rfc1123': '...'}}
-
-            >>> await client.arequest("Ticker", params={"pair": "XBTUSD"})
-            {'error': [], 'result': {...}}
-
-            >>> await client.arequest("Balance")
-            {'error': [], 'result': {...}}
         """
-        api_type = self._get_api_type(endpoint)
-        url_path = f"{api_type.path}{endpoint}"
-        url = f"{self.API_DOMAIN}{url_path}"
-        headers = kwargs.pop("headers", {})
-        client = self._get_async_client()
+        # Detect if this is a schema-based or string-based request
+        if isinstance(endpoint_or_schema, BaseRequestSchema):
+            # Schema-based request
+            schema = endpoint_or_schema
+            endpoint, response_class = get_endpoint_info(schema)
 
-        # Send request
-        try:
-            if api_type.is_private():  # Private endpoint - requires auth and always uses POST
-                if not self.api_key or not self.api_secret:
-                    raise ValueError(
-                        "API key and secret required for private endpoints. Set `KRAKEN_API_KEY` and `KRAKEN_API_SECRET` environment variables."
-                    )
-                data = kwargs.pop("data", kwargs.pop("params", {}))
-                data = self._prepare_order_data(endpoint, data)
-                nonce = str(get_nonce())
-                data["nonce"] = nonce
-                signature = self._sign_request(url_path, data, nonce)
-                headers["API-Key"] = self.api_key
-                headers["API-Sign"] = signature
-                logger.debug(f"Making authenticated async POST request to {endpoint}")
-                response = await client.post(url, data=data, headers=headers, **kwargs)
-            else:  # Public endpoint - always uses GET
-                logger.debug(f"Making public async GET request to {endpoint}")
-                response = await client.get(url, headers=headers, **kwargs)
-            response.raise_for_status()
-        except httpx.TimeoutException as e:
-            logger.error(f"Request timeout for {endpoint}: {e}")
-            raise KrakenTimeoutError(f"Request timeout for {endpoint}: {e}") from e
-        except httpx.ConnectError as e:
-            logger.error(f"Connection error for {endpoint}: {e}")
-            raise KrakenConnectionError(f"Connection error for {endpoint}: {e}") from e
-        except httpx.HTTPStatusError as e:
-            logger.error(f"HTTP error for {endpoint}: {e}")
-            raise KrakenHTTPError(f"HTTP error for {endpoint}: {e}") from e
-        except httpx.RequestError as e:
-            logger.error(f"Request failed for {endpoint}: {e}")
-            raise
+            # Serialize schema to dict
+            data = schema.to_api_dict()
 
-        # Parse response
-        try:
-            data = response.json()
-        except ValueError as e:
-            logger.error(f"Failed to parse JSON response: {e}")
-            raise KrakenPayloadError(f"Invalid JSON response: {e}", "", 0) from e
-        if "error" in data and data["error"]:
-            error_msg = ", ".join(data["error"])
-            logger.error(f"API error for {endpoint}: {error_msg}")
-            raise KrakenAPIError(f"API error: {error_msg}")
+            # Make the request using the string-based logic, but catch API errors
+            # to wrap them in the response object instead of raising
+            raw_response = {}
+            try:
+                raw_response = await self.arequest(endpoint, data=data, headers=headers or {})
+            except Exception as e:
+                raw_response["error"] = [str(e)]
 
-        logger.info(f"Successfully completed async request to {endpoint}")
-        return data
+            # Parse and return typed response
+            return response_class.from_response(raw_response)
+        else:
+            # String-based request (legacy path)
+            endpoint = endpoint_or_schema
+            api_type = self._get_api_type(endpoint)
+            url_path = f"{api_type.path}{endpoint}"
+            url = f"{self.API_DOMAIN}{url_path}"
+            if headers is None:
+                headers = kwargs.pop("headers", {})
+            client = self._get_async_client()
+
+            # Send request
+            try:
+                if api_type.is_private():  # Private endpoint - requires auth and always uses POST
+                    if not self.api_key or not self.api_secret:
+                        raise ValueError(
+                            "API key and secret required for private endpoints. Set `KRAKEN_API_KEY` and `KRAKEN_API_SECRET` environment variables."
+                        )
+                    data = kwargs.pop("data", kwargs.pop("params", {}))
+                    data = self._prepare_order_data(endpoint, data)
+                    nonce = str(get_nonce())
+                    data["nonce"] = nonce
+                    signature = self._sign_request(url_path, data, nonce)
+                    headers["API-Key"] = self.api_key
+                    headers["API-Sign"] = signature
+                    logger.debug(f"Making authenticated async POST request to {endpoint}")
+                    response = await client.post(url, data=data, headers=headers, **kwargs)
+                else:  # Public endpoint - always uses GET
+                    logger.debug(f"Making public async GET request to {endpoint}")
+                    response = await client.get(url, headers=headers, **kwargs)
+                response.raise_for_status()
+            except httpx.TimeoutException as e:
+                logger.error(f"Request timeout for {endpoint}: {e}")
+                raise KrakenTimeoutError(f"Request timeout for {endpoint}: {e}") from e
+            except httpx.ConnectError as e:
+                logger.error(f"Connection error for {endpoint}: {e}")
+                raise KrakenConnectionError(f"Connection error for {endpoint}: {e}") from e
+            except httpx.HTTPStatusError as e:
+                logger.error(f"HTTP error for {endpoint}: {e}")
+                raise KrakenHTTPError(f"HTTP error for {endpoint}: {e}") from e
+            except httpx.RequestError as e:
+                logger.error(f"Request failed for {endpoint}: {e}")
+                raise
+
+            # Parse response
+            try:
+                response_json = response.json()
+            except ValueError as e:
+                logger.error(f"Failed to parse JSON response: {e}")
+                raise KrakenPayloadError(f"Invalid JSON response: {e}", "", 0) from e
+            if "error" in response_json and response_json["error"]:
+                error_msg = ", ".join(response_json["error"])
+                logger.error(f"API error for {endpoint}: {error_msg}")
+                raise KrakenAPIError(f"API error: {error_msg}")
+
+            logger.info(f"Successfully completed async request to {endpoint}")
+            return response_json
