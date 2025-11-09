@@ -15,69 +15,69 @@ from kraken.exceptions import (
     KrakenTimeoutError,
 )
 from kraken.rest.client import KrakenRESTClient
-from kraken.rest.endpoint import KrakenEndpoint
+from kraken.rest.endpoint import KrakenChannel
 
 
 class TestAPIType:
     """Tests for APIType enum"""
 
     def test_public_channels(self):
-        """Test that PUBLIC type returns correct channels"""
-        channels = KrakenEndpoint.PUBLIC.channels
+        """Test that MARKETS type returns correct channels"""
+        channels = KrakenChannel.MARKETS.channels
         assert isinstance(channels, set)
         assert "Time" in channels
         assert "Assets" in channels
         assert "Ticker" in channels
-        assert len(channels) == 9
+        assert len(channels) == 11
 
     def test_private_channels(self):
-        """Test that PRIVATE type returns correct channels"""
-        channels = KrakenEndpoint.PRIVATE.channels
+        """Test that ACCOUNT type returns correct channels"""
+        channels = KrakenChannel.ACCOUNT.channels
         assert isinstance(channels, set)
         assert "Balance" in channels
         assert "TradeBalance" in channels
         assert "OpenOrders" in channels
-        assert len(channels) == 19
+        assert len(channels) == 20
 
     def test_trading_channels(self):
         """Test that TRADING type returns correct channels"""
-        channels = KrakenEndpoint.TRADING.channels
+        channels = KrakenChannel.TRADING.channels
         assert isinstance(channels, set)
         assert "AddOrder" in channels
         assert "CancelOrder" in channels
-        assert len(channels) == 7
+        assert len(channels) == 8
 
     def test_funding_channels(self):
         """Test that FUNDING type returns correct channels"""
-        channels = KrakenEndpoint.FUNDING.channels
+        channels = KrakenChannel.FUNDING.channels
         assert isinstance(channels, set)
         assert "DepositMethods" in channels
         assert "Withdraw" in channels
         assert len(channels) == 8
 
-    def test_staking_channels(self):
-        """Test that STAKING type returns correct channels"""
-        channels = KrakenEndpoint.STAKING.channels
+    def test_earning_channels(self):
+        """Test that EARNING type returns correct channels"""
+        channels = KrakenChannel.EARNING.channels
         assert isinstance(channels, set)
-        assert "Stake" in channels
-        assert "Unstake" in channels
-        assert len(channels) == 12
+        assert "Earn/Strategies" in channels
+        assert "Earn/Allocate" in channels
+        assert len(channels) == 6
 
     def test_public_path(self):
-        """Test that PUBLIC type returns correct path"""
-        assert KrakenEndpoint.PUBLIC.path == "/0/public/"
+        """Test that MARKETS type returns correct path"""
+        assert KrakenChannel.MARKETS.path == "/0/public/"
 
     def test_private_path(self):
-        """Test that PRIVATE type returns correct path"""
-        assert KrakenEndpoint.PRIVATE.path == "/0/private/"
+        """Test that ACCOUNT type returns correct path"""
+        assert KrakenChannel.ACCOUNT.path == "/0/private/"
 
     def test_is_private(self):
         """Test is_private method"""
-        assert not KrakenEndpoint.PUBLIC.is_private()
-        assert KrakenEndpoint.PRIVATE.is_private()
-        assert KrakenEndpoint.TRADING.is_private()
-        assert KrakenEndpoint.FUNDING.is_private()
-        assert KrakenEndpoint.STAKING.is_private()
+        assert not KrakenChannel.MARKETS.is_private()
+        assert KrakenChannel.ACCOUNT.is_private()
+        assert KrakenChannel.TRADING.is_private()
+        assert KrakenChannel.FUNDING.is_private()
+        assert KrakenChannel.EARNING.is_private()
 
 
 class TestKrakenRESTClientInitialization:
@@ -151,28 +151,28 @@ class TestKrakenRESTClientMethods:
 
     def test_get_api_type_public(self, client):
         """Test _get_api_type for public endpoints"""
-        assert client._get_api_type("Time") == KrakenEndpoint.PUBLIC
-        assert client._get_api_type("Ticker") == KrakenEndpoint.PUBLIC
+        assert client._get_api_type("Time") == KrakenChannel.MARKETS
+        assert client._get_api_type("Ticker") == KrakenChannel.MARKETS
 
     def test_get_api_type_private(self, client):
         """Test _get_api_type for private endpoints"""
-        assert client._get_api_type("Balance") == KrakenEndpoint.PRIVATE
-        assert client._get_api_type("TradeBalance") == KrakenEndpoint.PRIVATE
+        assert client._get_api_type("Balance") == KrakenChannel.ACCOUNT
+        assert client._get_api_type("TradeBalance") == KrakenChannel.ACCOUNT
 
     def test_get_api_type_trading(self, client):
         """Test _get_api_type for trading endpoints"""
-        assert client._get_api_type("AddOrder") == KrakenEndpoint.TRADING
-        assert client._get_api_type("CancelOrder") == KrakenEndpoint.TRADING
+        assert client._get_api_type("AddOrder") == KrakenChannel.TRADING
+        assert client._get_api_type("CancelOrder") == KrakenChannel.TRADING
 
     def test_get_api_type_funding(self, client):
         """Test _get_api_type for funding endpoints"""
-        assert client._get_api_type("Withdraw") == KrakenEndpoint.FUNDING
-        assert client._get_api_type("DepositMethods") == KrakenEndpoint.FUNDING
+        assert client._get_api_type("Withdraw") == KrakenChannel.FUNDING
+        assert client._get_api_type("DepositMethods") == KrakenChannel.FUNDING
 
-    def test_get_api_type_staking(self, client):
-        """Test _get_api_type for staking endpoints"""
-        assert client._get_api_type("Stake") == KrakenEndpoint.STAKING
-        assert client._get_api_type("Unstake") == KrakenEndpoint.STAKING
+    def test_get_api_type_earning(self, client):
+        """Test _get_api_type for earning endpoints"""
+        assert client._get_api_type("Earn/Strategies") == KrakenChannel.EARNING
+        assert client._get_api_type("Earn/Allocate") == KrakenChannel.EARNING
 
     def test_get_api_type_unknown(self, client):
         """Test _get_api_type with unknown method"""

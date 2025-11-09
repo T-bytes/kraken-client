@@ -63,7 +63,7 @@ from kraken.exceptions import (
     KrakenPayloadError,
     KrakenTimeoutError,
 )
-from kraken.rest.endpoint import KrakenEndpoint
+from kraken.rest.endpoint import KrakenChannel
 from kraken.rest.schema.trading import AddOrderRequest
 from kraken.utilities import get_nonce
 
@@ -208,7 +208,7 @@ class KrakenRESTClient:
             logger.debug("Asynchronous HTTP client initialized")
         return self._async_client
 
-    def _get_api_type(self, method: str) -> KrakenEndpoint:
+    def _get_api_type(self, method: str) -> KrakenChannel:
         """Determine the API type for a given method.
 
         Args:
@@ -220,7 +220,7 @@ class KrakenRESTClient:
         Raises:
             ValueError: If method is not found in any API type
         """
-        for api_type in KrakenEndpoint:
+        for api_type in KrakenChannel:
             if method in api_type.channels:
                 return api_type
         raise ValueError(f"Unknown API method: {method}")

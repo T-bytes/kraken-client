@@ -1,18 +1,25 @@
-from enum import Enum
+from enum import StrEnum
+
+from .schema.market import *
+from .schema.trading import *
 
 
-class KrakenEndpoint(Enum):
+class KrakenEndpoint(StrEnum):
+    pass
+
+
+class KrakenChannel(StrEnum):
     """Enumeration of Kraken API endpoint types
 
     Each type corresponds to a different category of API endpoints
     and has an associated set of available channels.
     """
 
-    PUBLIC = "public"
-    PRIVATE = "private"
-    TRADING = "trading"
+    ACCOUNT = "account"
+    EARNING = "earning"
     FUNDING = "funding"
-    STAKING = "staking"
+    MARKETS = "markets"
+    TRADING = "trading"
 
     @property
     def channels(self) -> set:
@@ -22,24 +29,15 @@ class KrakenEndpoint(Enum):
             Set of channel/endpoint names available for this API type
         """
         _channels = {
-            KrakenEndpoint.PUBLIC: {
-                "Time",
-                "Assets",
-                "AssetPairs",
-                "Ticker",
-                "OHLC",
-                "Depth",
-                "Trades",
-                "Spread",
-                "SystemStatus",
-            },
-            KrakenEndpoint.PRIVATE: {
+            KrakenChannel.ACCOUNT: {
                 "Balance",
                 "BalanceEx",
+                "CreditLines",
                 "TradeBalance",
                 "OpenOrders",
                 "ClosedOrders",
                 "QueryOrders",
+                "OrderAmends",
                 "TradesHistory",
                 "QueryTrades",
                 "OpenPositions",
@@ -50,20 +48,18 @@ class KrakenEndpoint(Enum):
                 "ExportStatus",
                 "RetrieveExport",
                 "RemoveExport",
-                "GetWebSocketsToken",
                 "CreateSubaccount",
                 "AccountTransfer",
             },
-            KrakenEndpoint.TRADING: {
-                "AddOrder",
-                "AddOrderBatch",
-                "EditOrder",
-                "CancelOrder",
-                "CancelOrderBatch",
-                "CancelAll",
-                "CancelAllOrdersAfter",
+            KrakenChannel.EARNING: {
+                "Earn/Strategies",
+                "Earn/Allocations",
+                "Earn/Allocate",
+                "Earn/Deallocate",
+                "Earn/AllocateStatus",
+                "Earn/DeallocateStatus",
             },
-            KrakenEndpoint.FUNDING: {
+            KrakenChannel.FUNDING: {
                 "DepositMethods",
                 "DepositAddresses",
                 "DepositStatus",
@@ -73,19 +69,28 @@ class KrakenEndpoint(Enum):
                 "WithdrawCancel",
                 "WalletTransfer",
             },
-            KrakenEndpoint.STAKING: {
-                "Earn/Strategies",
-                "Earn/Allocations",
-                "Earn/Allocate",
-                "Earn/Deallocate",
-                "Earn/AllocateStatus",
-                "Earn/DeallocateStatus",
-                "Staking/Assets",
-                "Staking/Balance",
-                "Stake",
-                "Unstake",
-                "Staking/Pending",
-                "Staking/Transactions",
+            KrakenChannel.MARKETS: {
+                "Time",
+                "SystemStatus",
+                "Assets",
+                "AssetPairs",
+                "Ticker",
+                "OHLC",
+                "Depth",
+                "Trades",
+                "Spreads",
+                "PreTrade",
+                "PostTrade",
+            },
+            KrakenChannel.TRADING: {
+                "AddOrder",
+                "AddOrderBatch",
+                "EditOrder",
+                "CancelOrder",
+                "CancelOrderBatch",
+                "CancelAll",
+                "CancelAllOrdersAfter",
+                "GetWebSocketsToken",
             },
         }
         return _channels[self]
@@ -97,7 +102,7 @@ class KrakenEndpoint(Enum):
         Returns:
             API path prefix (i.e., "/0/public/" or "/0/private/")
         """
-        if self == KrakenEndpoint.PUBLIC:
+        if self in {KrakenChannel.MARKETS}:
             return "/0/public/"
         return "/0/private/"
 
@@ -107,4 +112,4 @@ class KrakenEndpoint(Enum):
         Returns:
             True if authentication is required, False otherwise
         """
-        return self != KrakenEndpoint.PUBLIC
+        return "private" in self.path
