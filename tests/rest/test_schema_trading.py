@@ -18,11 +18,7 @@ from kraken.rest.schema.trading import (
     AmendOrderSuccess,
     BatchOrderItem,
     BatchOrderResult,
-    CancelAllOrdersAfterRequest,
-    CancelAllOrdersAfterResponse,
-    CancelAllOrdersAfterSuccess,
     CancelAllRequest,
-    CancelAllResponse,
     CancelAllSuccess,
     CancelOrderBatchItem,
     CancelOrderBatchRequest,
@@ -1509,7 +1505,7 @@ class TestCancelOrderResponse:
 
     def test_response_wrapper_direct_instantiation(self):
         """Test creating CancelOrderResponse wrapper directly"""
-        success = CancelOrderSuccess(count=3, pending=False)
+        success = CancelAllSuccess(count=3, pending=False)
         response = CancelOrderResponse(success=success)
 
         assert response.is_success is True
@@ -1623,11 +1619,56 @@ class TestCancelAllRequest:
     """Tests for CancelAllRequest schema"""
 
     def test_minimal_valid_cancel_all(self):
-        """Test creating a minimal valid cancel all request"""
+        """Test creating a minimal valid cancel all request (no timeout)"""
         cancel_all = CancelAllRequest()
 
         # Should be valid with no required fields
         assert cancel_all is not None
+        assert cancel_all.timeout is None
+
+    def test_cancel_all_with_timeout(self):
+        """Test creating cancel all request with timeout (Dead Man's Switch)"""
+        cancel_all = CancelAllRequest(timeout=60)
+
+        assert cancel_all is not None
+        assert cancel_all.timeout == 60
+
+    def test_cancel_all_with_timeout_zero(self):
+        """Test creating cancel all request with timeout=0 (disable timer)"""
+        cancel_all = CancelAllRequest(timeout=0)
+
+        assert cancel_all is not None
+        assert cancel_all.timeout == 0
+
+    def test_timeout_validation_valid_values(self):
+        """Test timeout validation with valid values"""
+        # Test minimum value
+        cancel_all = CancelAllRequest(timeout=0)
+        assert cancel_all.timeout == 0
+
+        # Test maximum value
+        cancel_all = CancelAllRequest(timeout=86400)
+        assert cancel_all.timeout == 86400
+
+        # Test middle value
+        cancel_all = CancelAllRequest(timeout=300)
+        assert cancel_all.timeout == 300
+
+    def test_timeout_validation_invalid_negative(self):
+        """Test timeout validation rejects negative values"""
+        with pytest.raises(ValueError, match="between 0 and 86400"):
+            CancelAllRequest(timeout=-1)
+
+    def test_timeout_validation_invalid_too_large(self):
+        """Test timeout validation rejects values > 86400"""
+        with pytest.raises(ValueError, match="between 0 and 86400"):
+            CancelAllRequest(timeout=86401)
+
+    def test_timeout_string_conversion(self):
+        """Test that timeout accepts string and converts to int"""
+        cancel_all = CancelAllRequest(timeout="60")
+        assert cancel_all.timeout == 60
+        assert isinstance(cancel_all.timeout, int)
 
     def test_no_nonce_field(self):
         """Test that nonce is not present in schema (handled by REST client)"""
@@ -1636,8 +1677,8 @@ class TestCancelAllRequest:
         # Should not have a nonce attribute
         assert not hasattr(cancel_all, "nonce")
 
-    def test_to_api_dict_method(self):
-        """Test to_api_dict() serialization helper method"""
+    def test_to_api_dict_method_no_timeout(self):
+        """Test to_api_dict() serialization helper method without timeout"""
         cancel_all = CancelAllRequest()
 
         # to_api_dict() should use by_alias=True and exclude_none=True
@@ -1648,7 +1689,16 @@ class TestCancelAllRequest:
 
         # Test exclude_none=False
         data_with_none = cancel_all.to_api_dict(exclude_none=False)
-        assert data_with_none == {}
+        assert data_with_none == {"timeout": None}
+
+    def test_to_api_dict_method_with_timeout(self):
+        """Test to_api_dict() serialization helper method with timeout"""
+        cancel_all = CancelAllRequest(timeout=120)
+
+        data = cancel_all.to_api_dict()
+
+        # Should include timeout
+        assert data == {"timeout": 120}
 
     def test_multiple_instances(self):
         """Test creating multiple CancelAllRequest instances"""
@@ -1658,6 +1708,17 @@ class TestCancelAllRequest:
         assert len(requests) == 10
         for req in requests:
             assert req is not None
+            assert req.timeout is None
+
+    def test_multiple_instances_with_timeouts(self):
+        """Test creating multiple CancelAllRequest instances with different timeouts"""
+        requests = [CancelAllRequest(timeout=i * 60) for i in range(10)]
+
+        # All should be valid
+        assert len(requests) == 10
+        for i, req in enumerate(requests):
+            assert req is not None
+            assert req.timeout == i * 60
 
 
 class TestCancelAllResponse:
@@ -1672,7 +1733,7 @@ class TestCancelAllResponse:
             },
         }
 
-        response = CancelAllResponse.from_response(kraken_response)
+        response = CancelOrderResponse.from_response(kraken_response)
 
         assert response.is_success is True
         assert response.success is not None
@@ -1689,7 +1750,7 @@ class TestCancelAllResponse:
             },
         }
 
-        response = CancelAllResponse.from_response(kraken_response)
+        response = CancelOrderResponse.from_response(kraken_response)
 
         assert response.is_success is True
         assert response.success.count == 15
@@ -1704,7 +1765,7 @@ class TestCancelAllResponse:
             },
         }
 
-        response = CancelAllResponse.from_response(kraken_response)
+        response = CancelOrderResponse.from_response(kraken_response)
 
         assert response.is_success is True
         assert response.success.count == 8
@@ -1720,7 +1781,7 @@ class TestCancelAllResponse:
             },
         }
 
-        response = CancelAllResponse.from_response(kraken_response)
+        response = CancelOrderResponse.from_response(kraken_response)
 
         assert response.is_success is True
         assert response.success.count == 3
@@ -1732,7 +1793,7 @@ class TestCancelAllResponse:
             "error": ["EGeneral:Permission denied"],
         }
 
-        response = CancelAllResponse.from_response(kraken_response)
+        response = CancelOrderResponse.from_response(kraken_response)
 
         assert response.is_success is False
         assert response.success is None
@@ -1748,7 +1809,7 @@ class TestCancelAllResponse:
             ],
         }
 
-        response = CancelAllResponse.from_response(kraken_response)
+        response = CancelOrderResponse.from_response(kraken_response)
 
         assert response.is_success is False
         assert len(response.failure.error) == 2
@@ -1767,7 +1828,7 @@ class TestCancelAllResponse:
             }
         )
 
-        response = CancelAllResponse.from_response(json_response)
+        response = CancelOrderResponse.from_response(json_response)
 
         assert response.is_success is True
         assert response.success.count == 7
@@ -1778,7 +1839,7 @@ class TestCancelAllResponse:
         invalid_response = {"error": []}  # Missing 'result'
 
         with pytest.raises(ValueError, match="missing 'result'"):
-            CancelAllResponse.from_response(invalid_response)
+            CancelOrderResponse.from_response(invalid_response)
 
     def test_success_model_direct_instantiation(self):
         """Test creating CancelAllSuccess directly"""
@@ -1802,16 +1863,95 @@ class TestCancelAllResponse:
     def test_response_wrapper_direct_instantiation(self):
         """Test creating CancelAllResponse wrapper directly"""
         success = CancelAllSuccess(count=5, pending=False)
-        response = CancelAllResponse(success=success)
+        response = CancelOrderResponse(success=success)
 
         assert response.is_success is True
         assert response.success.count == 5
 
         error = ResponseErrorSchema(error=["Test error"])
-        response2 = CancelAllResponse(failure=error)
+        response2 = CancelOrderResponse(failure=error)
 
         assert response2.is_success is False
         assert response2.failure.error[0] == "Test error"
+
+    def test_cancel_all_after_response_parsing(self):
+        """Test parsing CancelAllOrdersAfter (Dead Man's Switch) response"""
+        kraken_response = {
+            "error": [],
+            "result": {
+                "currentTime": "2024-01-15T10:30:00Z",
+                "triggerTime": "2024-01-15T10:31:00Z",
+            },
+        }
+
+        response = CancelOrderResponse.from_response(kraken_response)
+
+        assert response.is_success is True
+        assert response.success is not None
+        assert response.success.current_time == "2024-01-15T10:30:00Z"
+        assert response.success.trigger_time == "2024-01-15T10:31:00Z"
+        assert response.success.count is None
+        assert response.success.pending is None
+
+    def test_cancel_all_after_disable_timer(self):
+        """Test parsing CancelAllOrdersAfter response when disabling timer (timeout=0)"""
+        kraken_response = {
+            "error": [],
+            "result": {
+                "currentTime": "2024-01-15T10:30:00Z",
+                "triggerTime": "0",
+            },
+        }
+
+        response = CancelOrderResponse.from_response(kraken_response)
+
+        assert response.is_success is True
+        assert response.success.current_time == "2024-01-15T10:30:00Z"
+        assert response.success.trigger_time == "0"
+
+    def test_unified_success_validation_cancel_all_fields(self):
+        """Test CancelAllSuccess with CancelAll fields only"""
+        success = CancelAllSuccess(count=10, pending=True)
+
+        assert success.count == 10
+        assert success.pending is True
+        assert success.current_time is None
+        assert success.trigger_time is None
+
+    def test_unified_success_validation_cancel_all_after_fields(self):
+        """Test CancelAllSuccess with CancelAllOrdersAfter fields only"""
+        success = CancelAllSuccess(
+            currentTime="2024-01-15T10:30:00Z", triggerTime="2024-01-15T10:31:00Z"
+        )
+
+        assert success.current_time == "2024-01-15T10:30:00Z"
+        assert success.trigger_time == "2024-01-15T10:31:00Z"
+        assert success.count is None
+        assert success.pending is None
+
+    def test_unified_success_validation_rejects_no_fields(self):
+        """Test CancelAllSuccess rejects response with no fields from either endpoint"""
+        with pytest.raises(ValueError, match="must contain either CancelAll fields"):
+            CancelAllSuccess()
+
+    def test_unified_success_validation_rejects_mixed_fields(self):
+        """Test CancelAllSuccess rejects response with fields from both endpoints"""
+        with pytest.raises(ValueError, match="cannot contain both"):
+            CancelAllSuccess(
+                count=5, currentTime="2024-01-15T10:30:00Z", triggerTime="2024-01-15T10:31:00Z"
+            )
+
+    def test_cancel_all_after_error_response(self):
+        """Test parsing error response from CancelAllOrdersAfter"""
+        kraken_response = {
+            "error": ["EGeneral:Invalid arguments:timeout"],
+        }
+
+        response = CancelOrderResponse.from_response(kraken_response)
+
+        assert response.is_success is False
+        assert response.failure is not None
+        assert "EGeneral:Invalid arguments:timeout" in response.failure.error
 
     def test_zero_count_response(self):
         """Test handling response with zero count (edge case - no open orders)"""
@@ -1822,7 +1962,7 @@ class TestCancelAllResponse:
             },
         }
 
-        response = CancelAllResponse.from_response(kraken_response)
+        response = CancelOrderResponse.from_response(kraken_response)
 
         # Even with zero count, it's still a successful response
         assert response.is_success is True
@@ -1863,319 +2003,6 @@ class TestConcurrentCancelAllScenarios:
         # All should have valid structure (empty dict)
         for d in dicts:
             assert d == {}
-
-
-class TestCancelAllOrdersAfterRequest:
-    """Tests for CancelAllOrdersAfterRequest schema"""
-
-    def test_minimal_valid_request_with_timeout(self):
-        """Test creating a minimal valid request with timeout"""
-        cancel_after = CancelAllOrdersAfterRequest(timeout=60)
-
-        assert cancel_after.timeout == 60
-
-    def test_timeout_zero_to_disable(self):
-        """Test setting timeout to zero to disable the timer"""
-        cancel_after = CancelAllOrdersAfterRequest(timeout=0)
-
-        assert cancel_after.timeout == 0
-
-    def test_timeout_max_value(self):
-        """Test setting timeout to maximum allowed value (24 hours)"""
-        cancel_after = CancelAllOrdersAfterRequest(timeout=86400)
-
-        assert cancel_after.timeout == 86400
-
-    def test_timeout_string_conversion(self):
-        """Test that timeout string is converted to integer"""
-        cancel_after = CancelAllOrdersAfterRequest(timeout="120")
-
-        assert cancel_after.timeout == 120
-        assert isinstance(cancel_after.timeout, int)
-
-    def test_timeout_negative_validation(self):
-        """Test that negative timeout raises validation error"""
-        with pytest.raises(ValidationError, match="between 0 and 86400"):
-            CancelAllOrdersAfterRequest(timeout=-1)
-
-    def test_timeout_too_large_validation(self):
-        """Test that timeout exceeding maximum raises validation error"""
-        with pytest.raises(ValidationError, match="between 0 and 86400"):
-            CancelAllOrdersAfterRequest(timeout=86401)
-
-    def test_timeout_way_too_large_validation(self):
-        """Test that extremely large timeout raises validation error"""
-        with pytest.raises(ValidationError, match="between 0 and 86400"):
-            CancelAllOrdersAfterRequest(timeout=100000)
-
-    def test_timeout_required(self):
-        """Test that timeout field is required"""
-        with pytest.raises(ValidationError):
-            CancelAllOrdersAfterRequest()
-
-    def test_no_nonce_field(self):
-        """Test that nonce is not present in schema (handled by REST client)"""
-        cancel_after = CancelAllOrdersAfterRequest(timeout=60)
-
-        # Should not have a nonce attribute
-        assert not hasattr(cancel_after, "nonce")
-
-    def test_to_api_dict_method(self):
-        """Test to_api_dict() serialization helper method"""
-        cancel_after = CancelAllOrdersAfterRequest(timeout=120)
-
-        # to_api_dict() should use by_alias=True and exclude_none=True
-        data = cancel_after.to_api_dict()
-
-        # Should contain timeout field
-        assert "timeout" in data
-        assert data["timeout"] == 120
-
-    def test_to_api_dict_with_zero_timeout(self):
-        """Test to_api_dict() with timeout=0 to disable"""
-        cancel_after = CancelAllOrdersAfterRequest(timeout=0)
-
-        data = cancel_after.to_api_dict()
-
-        # Zero should be included (not excluded as None)
-        assert "timeout" in data
-        assert data["timeout"] == 0
-
-    def test_various_timeout_values(self):
-        """Test various valid timeout values"""
-        timeouts = [0, 15, 30, 60, 300, 600, 3600, 43200, 86400]
-
-        for timeout_val in timeouts:
-            cancel_after = CancelAllOrdersAfterRequest(timeout=timeout_val)
-            assert cancel_after.timeout == timeout_val
-
-
-class TestCancelAllOrdersAfterResponse:
-    """Tests for CancelAllOrdersAfter response schemas"""
-
-    def test_success_response_parsing(self):
-        """Test parsing a successful response"""
-        kraken_response = {
-            "error": [],
-            "result": {
-                "currentTime": "2025-01-15T12:00:00Z",
-                "triggerTime": "2025-01-15T12:01:00Z",
-            },
-        }
-
-        response = CancelAllOrdersAfterResponse.from_response(kraken_response)
-
-        assert response.is_success is True
-        assert response.success is not None
-        assert response.failure is None
-        assert response.success.current_time == "2025-01-15T12:00:00Z"
-        assert response.success.trigger_time == "2025-01-15T12:01:00Z"
-
-    def test_success_response_with_zero_timeout(self):
-        """Test parsing response when timer is disabled (timeout=0)"""
-        kraken_response = {
-            "error": [],
-            "result": {
-                "currentTime": "2025-01-15T12:00:00Z",
-                "triggerTime": "0",
-            },
-        }
-
-        response = CancelAllOrdersAfterResponse.from_response(kraken_response)
-
-        assert response.is_success is True
-        assert response.success.current_time == "2025-01-15T12:00:00Z"
-        assert response.success.trigger_time == "0"
-
-    def test_error_response_parsing(self):
-        """Test parsing an error response"""
-        kraken_response = {
-            "error": ["EGeneral:Invalid arguments"],
-        }
-
-        response = CancelAllOrdersAfterResponse.from_response(kraken_response)
-
-        assert response.is_success is False
-        assert response.success is None
-        assert response.failure is not None
-        assert "EGeneral:Invalid arguments" in response.failure.error
-
-    def test_multiple_errors(self):
-        """Test parsing response with multiple errors"""
-        kraken_response = {
-            "error": [
-                "EGeneral:Invalid arguments",
-                "EGeneral:Permission denied",
-            ],
-        }
-
-        response = CancelAllOrdersAfterResponse.from_response(kraken_response)
-
-        assert response.is_success is False
-        assert len(response.failure.error) == 2
-        assert "EGeneral:Invalid arguments" in response.failure.error
-        assert "EGeneral:Permission denied" in response.failure.error
-
-    def test_from_json_string(self):
-        """Test parsing from JSON string"""
-        json_response = json.dumps(
-            {
-                "error": [],
-                "result": {
-                    "currentTime": "2025-01-15T14:30:00Z",
-                    "triggerTime": "2025-01-15T14:31:00Z",
-                },
-            }
-        )
-
-        response = CancelAllOrdersAfterResponse.from_response(json_response)
-
-        assert response.is_success is True
-        assert response.success.current_time == "2025-01-15T14:30:00Z"
-        assert response.success.trigger_time == "2025-01-15T14:31:00Z"
-
-    def test_invalid_response_format(self):
-        """Test that invalid response format raises appropriate error"""
-        invalid_response = {"error": []}  # Missing 'result'
-
-        with pytest.raises(ValueError, match="missing 'result'"):
-            CancelAllOrdersAfterResponse.from_response(invalid_response)
-
-    def test_success_model_direct_instantiation(self):
-        """Test creating CancelAllOrdersAfterSuccess directly"""
-        success = CancelAllOrdersAfterSuccess(
-            currentTime="2025-01-15T10:00:00Z", triggerTime="2025-01-15T10:01:00Z"
-        )
-
-        assert success.current_time == "2025-01-15T10:00:00Z"
-        assert success.trigger_time == "2025-01-15T10:01:00Z"
-
-    def test_error_model_direct_instantiation(self):
-        """Test creating error response directly"""
-        error = ResponseErrorSchema(error=["EGeneral:Invalid timeout"])
-
-        assert len(error.error) == 1
-        assert error.error[0] == "EGeneral:Invalid timeout"
-
-    def test_response_wrapper_direct_instantiation(self):
-        """Test creating CancelAllOrdersAfterResponse wrapper directly"""
-        success = CancelAllOrdersAfterSuccess(
-            currentTime="2025-01-15T10:00:00Z", triggerTime="2025-01-15T10:01:00Z"
-        )
-        response = CancelAllOrdersAfterResponse(success=success)
-
-        assert response.is_success is True
-        assert response.success.current_time == "2025-01-15T10:00:00Z"
-
-        error = ResponseErrorSchema(error=["Test error"])
-        response2 = CancelAllOrdersAfterResponse(failure=error)
-
-        assert response2.is_success is False
-        assert response2.failure.error[0] == "Test error"
-
-    def test_rfc3339_timestamp_format(self):
-        """Test that various RFC3339 timestamp formats are accepted"""
-        # Different RFC3339 formats
-        formats = [
-            ("2025-01-15T12:00:00Z", "2025-01-15T12:01:00Z"),
-            ("2025-01-15T12:00:00+00:00", "2025-01-15T12:01:00+00:00"),
-            ("2025-01-15T12:00:00.123456Z", "2025-01-15T12:01:00.123456Z"),
-            ("2025-01-15T08:00:00-04:00", "2025-01-15T08:01:00-04:00"),
-        ]
-
-        for current, trigger in formats:
-            kraken_response = {
-                "error": [],
-                "result": {
-                    "currentTime": current,
-                    "triggerTime": trigger,
-                },
-            }
-
-            response = CancelAllOrdersAfterResponse.from_response(kraken_response)
-
-            assert response.is_success is True
-            assert response.success.current_time == current
-            assert response.success.trigger_time == trigger
-
-
-class TestConcurrentCancelAllOrdersAfterScenarios:
-    """Tests for concurrent and async cancel all orders after usage scenarios"""
-
-    def test_multiple_requests_no_collision(self):
-        """Test that creating multiple requests simultaneously doesn't cause issues"""
-        # Create multiple requests in rapid succession
-        requests = []
-        for i in range(10):
-            req = CancelAllOrdersAfterRequest(timeout=60 + i * 10)
-            requests.append(req)
-
-        # All requests should be valid
-        assert len(requests) == 10
-
-        # No nonce field should exist (nonce handled by REST client)
-        for req in requests:
-            assert not hasattr(req, "nonce")
-
-        # Each should have unique timeout
-        timeouts = [r.timeout for r in requests]
-        assert len(set(timeouts)) == 10
-
-    def test_concurrent_creation_with_validation(self):
-        """Test concurrent creation with timeout validation"""
-        import concurrent.futures
-
-        def create_request(i):
-            # Create with different valid timeouts
-            timeout = (i % 10) * 100 + 60
-            return CancelAllOrdersAfterRequest(timeout=timeout)
-
-        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-            requests = list(executor.map(create_request, range(50)))
-
-        assert len(requests) == 50
-
-        # All should have valid timeouts
-        for req in requests:
-            assert 0 <= req.timeout <= 86400
-
-    def test_concurrent_serialization(self):
-        """Test concurrent serialization of requests"""
-        import concurrent.futures
-
-        def create_and_serialize(i):
-            req = CancelAllOrdersAfterRequest(timeout=60 + i)
-            return req.to_api_dict()
-
-        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-            dicts = list(executor.map(create_and_serialize, range(50)))
-
-        assert len(dicts) == 50
-
-        # All should have valid structure with timeout field
-        for i, d in enumerate(dicts):
-            assert "timeout" in d
-            assert d["timeout"] == 60 + i
-
-    def test_rapid_toggle_timer(self):
-        """Test rapid toggling between enabling and disabling timer"""
-        requests = []
-        for i in range(100):
-            if i % 2 == 0:
-                req = CancelAllOrdersAfterRequest(timeout=60)
-            else:
-                req = CancelAllOrdersAfterRequest(timeout=0)
-            requests.append(req)
-
-        # All should be valid
-        assert len(requests) == 100
-
-        # Check alternating pattern
-        for i, req in enumerate(requests):
-            if i % 2 == 0:
-                assert req.timeout == 60
-            else:
-                assert req.timeout == 0
 
 
 class TestGetWebSocketsTokenRequest:

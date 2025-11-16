@@ -22,8 +22,7 @@ SCHEMA_REGISTRY: dict[Type[BaseRequestSchema], tuple[str, Type[BaseResponseWrapp
     AddOrderRequest: ("AddOrder", AddOrderResponse),
     AmendOrderRequest: ("EditOrder", AmendOrderResponse),
     CancelOrderRequest: ("CancelOrder", CancelOrderResponse),
-    CancelAllRequest: ("CancelAll", CancelAllResponse),
-    CancelAllOrdersAfterRequest: ("CancelAllOrdersAfter", CancelAllOrdersAfterResponse),
+    CancelAllRequest: ("CancelAll", CancelOrderResponse),
     GetWebSocketsTokenRequest: ("GetWebSocketsToken", GetWebSocketsTokenResponse),
     AddOrderBatchRequest: ("AddOrderBatch", AddOrderBatchResponse),
     CancelOrderBatchRequest: ("CancelOrderBatch", CancelOrderBatchResponse),
@@ -50,4 +49,12 @@ def get_endpoint_info(
             f"Unknown request schema type: {schema_type.__name__}. "
             f"Available types: {', '.join(cls.__name__ for cls in SCHEMA_REGISTRY.keys())}"
         )
+
+    # Special case: CancelAllRequest routes to different endpoints based on timeout
+    if schema_type == CancelAllRequest:
+        from kraken.rest.schema.trading import CancelAllRequest as CancelAllReq
+
+        if isinstance(schema, CancelAllReq) and schema.timeout is not None:
+            return ("CancelAllOrdersAfter", CancelOrderResponse)
+
     return SCHEMA_REGISTRY[schema_type]
