@@ -2,6 +2,7 @@
 
 from typing import Type
 
+from .account import *
 from .base import BaseRequestSchema, BaseResponseWrapper
 from .market import *
 from .trading import *
@@ -26,6 +27,25 @@ SCHEMA_REGISTRY: dict[Type[BaseRequestSchema], tuple[str, Type[BaseResponseWrapp
     GetWebSocketsTokenRequest: ("GetWebSocketsToken", GetWebSocketsTokenResponse),
     AddOrderBatchRequest: ("AddOrderBatch", AddOrderBatchResponse),
     CancelOrderBatchRequest: ("CancelOrderBatch", CancelOrderBatchResponse),
+    # Account endpoints
+    GetBalanceRequest: ("Balance", GetBalanceResponse),
+    GetExtendedBalanceRequest: ("BalanceEx", GetExtendedBalanceResponse),
+    GetCreditLinesRequest: ("CreditLines", GetCreditLinesResponse),
+    GetTradeBalanceRequest: ("TradeBalance", GetTradeBalanceResponse),
+    GetOpenOrdersRequest: ("OpenOrders", GetOpenOrdersResponse),
+    GetClosedOrdersRequest: ("ClosedOrders", GetClosedOrdersResponse),
+    QueryOrdersRequest: ("QueryOrders", QueryOrdersResponse),
+    GetOrderAmendsRequest: ("OrderAmends", GetOrderAmendsResponse),
+    GetTradesHistoryRequest: ("TradesHistory", GetTradesHistoryResponse),
+    QueryTradesRequest: ("QueryTrades", QueryTradesResponse),
+    GetOpenPositionsRequest: ("OpenPositions", GetOpenPositionsResponse),
+    GetLedgersRequest: ("Ledgers", GetLedgersResponse),
+    QueryLedgersRequest: ("QueryLedgers", QueryLedgersResponse),
+    GetTradeVolumeRequest: ("TradeVolume", GetTradeVolumeResponse),
+    RequestExportRequest: ("AddExport", RequestExportResponse),
+    GetExportStatusRequest: ("ExportStatus", GetExportStatusResponse),
+    RetrieveExportRequest: ("RetrieveExport", RetrieveExportResponse),
+    DeleteExportRequest: ("RemoveExport", DeleteExportResponse),
 }
 
 

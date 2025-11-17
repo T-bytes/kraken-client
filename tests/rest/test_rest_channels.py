@@ -4,8 +4,44 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from kraken.rest.channels import MarketChannel, TradingChannel
+from kraken.rest.channels import AccountChannel, MarketChannel, TradingChannel
 from kraken.rest.client import KrakenRESTClient
+from kraken.rest.schema.account import (
+    DeleteExportRequest,
+    DeleteExportResponse,
+    GetBalanceRequest,
+    GetBalanceResponse,
+    GetClosedOrdersRequest,
+    GetClosedOrdersResponse,
+    GetExportStatusRequest,
+    GetExportStatusResponse,
+    GetExtendedBalanceRequest,
+    GetExtendedBalanceResponse,
+    GetLedgersRequest,
+    GetLedgersResponse,
+    GetOpenOrdersRequest,
+    GetOpenOrdersResponse,
+    GetOpenPositionsRequest,
+    GetOpenPositionsResponse,
+    GetOrderAmendsRequest,
+    GetOrderAmendsResponse,
+    GetTradeBalanceRequest,
+    GetTradeBalanceResponse,
+    GetTradesHistoryRequest,
+    GetTradesHistoryResponse,
+    GetTradeVolumeRequest,
+    GetTradeVolumeResponse,
+    QueryLedgersRequest,
+    QueryLedgersResponse,
+    QueryOrdersRequest,
+    QueryOrdersResponse,
+    QueryTradesRequest,
+    QueryTradesResponse,
+    RequestExportRequest,
+    RequestExportResponse,
+    RetrieveExportRequest,
+    RetrieveExportResponse,
+)
 from kraken.rest.schema.market import (
     GetAssetInfoRequest,
     GetAssetInfoResponse,
@@ -1310,4 +1346,686 @@ class TestTradingChannelGetWebSocketsToken:
         assert len(result) == 2
         request, response = result
         assert isinstance(request, GetWebSocketsTokenRequest)
+        assert response is mock_response
+
+
+# ============================================================================
+# AccountChannel Tests
+# ============================================================================
+
+
+class TestAccountChannelInitialization:
+    """Tests for AccountChannel initialization"""
+
+    def test_init_with_client(self):
+        """Test AccountChannel initialization with a client"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        channel = AccountChannel(mock_client)
+
+        assert channel.client is mock_client
+        assert channel.channel == "account"
+        assert channel.private is True
+
+    def test_path_property(self):
+        """Test that path property returns correct private path"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        channel = AccountChannel(mock_client)
+
+        assert channel.path == "/0/private/"
+
+
+class TestAccountChannelGetBalance:
+    """Tests for get_balance method"""
+
+    def test_get_balance_no_parameters(self):
+        """Test get_balance with no parameters"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=GetBalanceResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = AccountChannel(mock_client)
+        request, response = channel.get_balance()
+
+        assert isinstance(request, GetBalanceRequest)
+        assert request.rebase_multiplier is None
+        assert response is mock_response
+
+    def test_get_balance_with_rebase_multiplier(self):
+        """Test get_balance with rebase_multiplier parameter"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=GetBalanceResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = AccountChannel(mock_client)
+        request, response = channel.get_balance(rebase_multiplier="base")
+
+        assert isinstance(request, GetBalanceRequest)
+        assert request.rebase_multiplier == "base"
+        assert response is mock_response
+
+
+class TestAccountChannelGetExtendedBalance:
+    """Tests for get_extended_balance method"""
+
+    def test_get_extended_balance_no_parameters(self):
+        """Test get_extended_balance with no parameters"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=GetExtendedBalanceResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = AccountChannel(mock_client)
+        request, response = channel.get_extended_balance()
+
+        assert isinstance(request, GetExtendedBalanceRequest)
+        assert request.rebase_multiplier is None
+        assert response is mock_response
+
+
+class TestAccountChannelGetTradeBalance:
+    """Tests for get_trade_balance method"""
+
+    def test_get_trade_balance_no_parameters(self):
+        """Test get_trade_balance with no parameters"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=GetTradeBalanceResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = AccountChannel(mock_client)
+        request, response = channel.get_trade_balance()
+
+        assert isinstance(request, GetTradeBalanceRequest)
+        assert request.asset is None
+        assert request.rebase_multiplier is None
+        assert response is mock_response
+
+    def test_get_trade_balance_with_asset(self):
+        """Test get_trade_balance with asset parameter"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=GetTradeBalanceResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = AccountChannel(mock_client)
+        request, response = channel.get_trade_balance(asset="ZUSD")
+
+        assert isinstance(request, GetTradeBalanceRequest)
+        assert request.asset == "ZUSD"
+        assert response is mock_response
+
+
+class TestAccountChannelGetOpenOrders:
+    """Tests for get_open_orders method"""
+
+    def test_get_open_orders_no_parameters(self):
+        """Test get_open_orders with no parameters"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=GetOpenOrdersResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = AccountChannel(mock_client)
+        request, response = channel.get_open_orders()
+
+        assert isinstance(request, GetOpenOrdersRequest)
+        assert request.trades is False
+        assert request.userref is None
+        assert request.cl_ord_id is None
+        assert response is mock_response
+
+    def test_get_open_orders_with_trades(self):
+        """Test get_open_orders with trades=True"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=GetOpenOrdersResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = AccountChannel(mock_client)
+        request, response = channel.get_open_orders(trades=True)
+
+        assert isinstance(request, GetOpenOrdersRequest)
+        assert request.trades is True
+        assert response is mock_response
+
+    def test_get_open_orders_with_userref(self):
+        """Test get_open_orders with userref"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=GetOpenOrdersResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = AccountChannel(mock_client)
+        request, response = channel.get_open_orders(userref=12345)
+
+        assert isinstance(request, GetOpenOrdersRequest)
+        assert request.userref == 12345
+        assert response is mock_response
+
+    def test_get_open_orders_with_cl_ord_id_string(self):
+        """Test get_open_orders with cl_ord_id as string"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=GetOpenOrdersResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = AccountChannel(mock_client)
+        request, response = channel.get_open_orders(cl_ord_id="order-123")
+
+        assert isinstance(request, GetOpenOrdersRequest)
+        assert request.cl_ord_id == "order-123"
+        assert response is mock_response
+
+    def test_get_open_orders_with_cl_ord_id_list(self):
+        """Test get_open_orders with cl_ord_id as list"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=GetOpenOrdersResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = AccountChannel(mock_client)
+        request, response = channel.get_open_orders(cl_ord_id=["order-1", "order-2"])
+
+        assert isinstance(request, GetOpenOrdersRequest)
+        # List gets converted to comma-separated string
+        assert request.cl_ord_id == "order-1,order-2"
+        assert response is mock_response
+
+
+class TestAccountChannelGetClosedOrders:
+    """Tests for get_closed_orders method"""
+
+    def test_get_closed_orders_no_parameters(self):
+        """Test get_closed_orders with no parameters"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=GetClosedOrdersResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = AccountChannel(mock_client)
+        request, response = channel.get_closed_orders()
+
+        assert isinstance(request, GetClosedOrdersRequest)
+        assert request.trades is False
+        assert request.start is None
+        assert request.end is None
+        assert response is mock_response
+
+    def test_get_closed_orders_with_timestamp_range(self):
+        """Test get_closed_orders with start and end timestamps"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=GetClosedOrdersResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = AccountChannel(mock_client)
+        request, response = channel.get_closed_orders(start=1609459200, end=1612137600)
+
+        assert isinstance(request, GetClosedOrdersRequest)
+        assert request.start == 1609459200
+        assert request.end == 1612137600
+        assert response is mock_response
+
+    def test_get_closed_orders_with_pagination(self):
+        """Test get_closed_orders with pagination offset"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=GetClosedOrdersResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = AccountChannel(mock_client)
+        request, response = channel.get_closed_orders(ofs=50)
+
+        assert isinstance(request, GetClosedOrdersRequest)
+        assert request.ofs == 50
+        assert response is mock_response
+
+    def test_get_closed_orders_with_closetime(self):
+        """Test get_closed_orders with closetime parameter"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=GetClosedOrdersResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = AccountChannel(mock_client)
+        request, response = channel.get_closed_orders(closetime="both")
+
+        assert isinstance(request, GetClosedOrdersRequest)
+        assert request.closetime == "both"
+        assert response is mock_response
+
+
+class TestAccountChannelQueryOrders:
+    """Tests for query_orders method"""
+
+    def test_query_orders_with_single_txid_string(self):
+        """Test query_orders with single txid as string"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=QueryOrdersResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = AccountChannel(mock_client)
+        request, response = channel.query_orders(txid="OQCLML-BW3P3-BUCMWZ")
+
+        assert isinstance(request, QueryOrdersRequest)
+        assert request.txid == "OQCLML-BW3P3-BUCMWZ"
+        assert response is mock_response
+
+    def test_query_orders_with_txid_list(self):
+        """Test query_orders with txid as list"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=QueryOrdersResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = AccountChannel(mock_client)
+        request, response = channel.query_orders(txid=["ORDER1", "ORDER2"])
+
+        assert isinstance(request, QueryOrdersRequest)
+        # List gets converted to comma-separated string
+        assert request.txid == "ORDER1,ORDER2"
+        assert response is mock_response
+
+
+class TestAccountChannelGetOrderAmends:
+    """Tests for get_order_amends method"""
+
+    def test_get_order_amends_basic(self):
+        """Test get_order_amends with order_id"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=GetOrderAmendsResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = AccountChannel(mock_client)
+        request, response = channel.get_order_amends(order_id="OQCLML-BW3P3-BUCMWZ")
+
+        assert isinstance(request, GetOrderAmendsRequest)
+        assert request.order_id == "OQCLML-BW3P3-BUCMWZ"
+        assert response is mock_response
+
+
+class TestAccountChannelGetTradesHistory:
+    """Tests for get_trades_history method"""
+
+    def test_get_trades_history_no_parameters(self):
+        """Test get_trades_history with no parameters"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=GetTradesHistoryResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = AccountChannel(mock_client)
+        request, response = channel.get_trades_history()
+
+        assert isinstance(request, GetTradesHistoryRequest)
+        assert request.type is None
+        assert request.start is None
+        assert request.end is None
+        assert response is mock_response
+
+    def test_get_trades_history_with_type(self):
+        """Test get_trades_history with type parameter"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=GetTradesHistoryResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = AccountChannel(mock_client)
+        request, response = channel.get_trades_history(type="all")
+
+        assert isinstance(request, GetTradesHistoryRequest)
+        assert request.type == "all"
+        assert response is mock_response
+
+    def test_get_trades_history_with_ledgers(self):
+        """Test get_trades_history with ledgers=True"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=GetTradesHistoryResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = AccountChannel(mock_client)
+        request, response = channel.get_trades_history(ledgers=True)
+
+        assert isinstance(request, GetTradesHistoryRequest)
+        assert request.ledgers is True
+        assert response is mock_response
+
+
+class TestAccountChannelQueryTrades:
+    """Tests for query_trades method"""
+
+    def test_query_trades_with_single_txid(self):
+        """Test query_trades with single txid"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=QueryTradesResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = AccountChannel(mock_client)
+        request, response = channel.query_trades(txid="THVRQM-33VKH-UCI7BS")
+
+        assert isinstance(request, QueryTradesRequest)
+        assert request.txid == "THVRQM-33VKH-UCI7BS"
+        assert response is mock_response
+
+    def test_query_trades_with_txid_list(self):
+        """Test query_trades with txid as list"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=QueryTradesResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = AccountChannel(mock_client)
+        request, response = channel.query_trades(txid=["TRADE1", "TRADE2"])
+
+        assert isinstance(request, QueryTradesRequest)
+        assert request.txid == "TRADE1,TRADE2"
+        assert response is mock_response
+
+
+class TestAccountChannelGetOpenPositions:
+    """Tests for get_open_positions method"""
+
+    def test_get_open_positions_no_parameters(self):
+        """Test get_open_positions with no parameters"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=GetOpenPositionsResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = AccountChannel(mock_client)
+        request, response = channel.get_open_positions()
+
+        assert isinstance(request, GetOpenPositionsRequest)
+        assert request.txid is None
+        assert request.docalcs is False
+        assert request.consolidation is None
+        assert response is mock_response
+
+    def test_get_open_positions_with_docalcs(self):
+        """Test get_open_positions with docalcs=True"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=GetOpenPositionsResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = AccountChannel(mock_client)
+        request, response = channel.get_open_positions(docalcs=True)
+
+        assert isinstance(request, GetOpenPositionsRequest)
+        assert request.docalcs is True
+        assert response is mock_response
+
+    def test_get_open_positions_with_consolidation(self):
+        """Test get_open_positions with consolidation parameter"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=GetOpenPositionsResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = AccountChannel(mock_client)
+        request, response = channel.get_open_positions(consolidation="market")
+
+        assert isinstance(request, GetOpenPositionsRequest)
+        assert request.consolidation == "market"
+        assert response is mock_response
+
+
+class TestAccountChannelGetLedgers:
+    """Tests for get_ledgers method"""
+
+    def test_get_ledgers_no_parameters(self):
+        """Test get_ledgers with no parameters"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=GetLedgersResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = AccountChannel(mock_client)
+        request, response = channel.get_ledgers()
+
+        assert isinstance(request, GetLedgersRequest)
+        assert request.asset is None
+        assert request.type is None
+        assert response is mock_response
+
+    def test_get_ledgers_with_asset_string(self):
+        """Test get_ledgers with asset as string"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=GetLedgersResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = AccountChannel(mock_client)
+        request, response = channel.get_ledgers(asset="XXBT")
+
+        assert isinstance(request, GetLedgersRequest)
+        assert request.asset == "XXBT"
+        assert response is mock_response
+
+    def test_get_ledgers_with_asset_list(self):
+        """Test get_ledgers with asset as list"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=GetLedgersResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = AccountChannel(mock_client)
+        request, response = channel.get_ledgers(asset=["XXBT", "ZUSD"])
+
+        assert isinstance(request, GetLedgersRequest)
+        assert request.asset == "XXBT,ZUSD"
+        assert response is mock_response
+
+    def test_get_ledgers_with_type(self):
+        """Test get_ledgers with type parameter"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=GetLedgersResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = AccountChannel(mock_client)
+        request, response = channel.get_ledgers(type="deposit")
+
+        assert isinstance(request, GetLedgersRequest)
+        assert request.type == "deposit"
+        assert response is mock_response
+
+
+class TestAccountChannelQueryLedgers:
+    """Tests for query_ledgers method"""
+
+    def test_query_ledgers_with_single_id(self):
+        """Test query_ledgers with single id"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=QueryLedgersResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = AccountChannel(mock_client)
+        request, response = channel.query_ledgers(id="LQFCFM-ELBSU-CMH5EI")
+
+        assert isinstance(request, QueryLedgersRequest)
+        assert request.id == "LQFCFM-ELBSU-CMH5EI"
+        assert response is mock_response
+
+    def test_query_ledgers_with_id_list(self):
+        """Test query_ledgers with id as list"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=QueryLedgersResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = AccountChannel(mock_client)
+        request, response = channel.query_ledgers(id=["LEDGER1", "LEDGER2"])
+
+        assert isinstance(request, QueryLedgersRequest)
+        assert request.id == "LEDGER1,LEDGER2"
+        assert response is mock_response
+
+
+class TestAccountChannelGetTradeVolume:
+    """Tests for get_trade_volume method"""
+
+    def test_get_trade_volume_no_parameters(self):
+        """Test get_trade_volume with no parameters"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=GetTradeVolumeResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = AccountChannel(mock_client)
+        request, response = channel.get_trade_volume()
+
+        assert isinstance(request, GetTradeVolumeRequest)
+        assert request.pair is None
+        assert response is mock_response
+
+    def test_get_trade_volume_with_single_pair(self):
+        """Test get_trade_volume with single pair"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=GetTradeVolumeResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = AccountChannel(mock_client)
+        request, response = channel.get_trade_volume(pair="XXBTZUSD")
+
+        assert isinstance(request, GetTradeVolumeRequest)
+        assert request.pair == "XXBTZUSD"
+        assert response is mock_response
+
+    def test_get_trade_volume_with_pair_list(self):
+        """Test get_trade_volume with pair as list"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=GetTradeVolumeResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = AccountChannel(mock_client)
+        request, response = channel.get_trade_volume(pair=["XXBTZUSD", "XETHZUSD"])
+
+        assert isinstance(request, GetTradeVolumeRequest)
+        assert request.pair == "XXBTZUSD,XETHZUSD"
+        assert response is mock_response
+
+
+class TestAccountChannelRequestExport:
+    """Tests for request_export method"""
+
+    def test_request_export_minimal_parameters(self):
+        """Test request_export with minimal parameters"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=RequestExportResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = AccountChannel(mock_client)
+        request, response = channel.request_export(report="trades", description="Q1 2024 trades")
+
+        assert isinstance(request, RequestExportRequest)
+        assert request.report == "trades"
+        assert request.description == "Q1 2024 trades"
+        assert request.format == "CSV"  # default
+        assert response is mock_response
+
+    def test_request_export_with_tsv_format(self):
+        """Test request_export with TSV format"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=RequestExportResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = AccountChannel(mock_client)
+        request, response = channel.request_export(
+            report="ledgers", description="Ledger export", format="TSV"
+        )
+
+        assert isinstance(request, RequestExportRequest)
+        assert request.format == "TSV"
+        assert response is mock_response
+
+    def test_request_export_with_timestamps(self):
+        """Test request_export with start and end timestamps"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=RequestExportResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = AccountChannel(mock_client)
+        request, response = channel.request_export(
+            report="trades",
+            description="Date range export",
+            starttm=1609459200,
+            endtm=1612137600,
+        )
+
+        assert isinstance(request, RequestExportRequest)
+        assert request.starttm == 1609459200
+        assert request.endtm == 1612137600
+        assert response is mock_response
+
+    def test_request_export_with_fields_list(self):
+        """Test request_export with fields as list"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=RequestExportResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = AccountChannel(mock_client)
+        request, response = channel.request_export(
+            report="trades",
+            description="Custom fields",
+            fields=["ordertxid", "time", "pair", "price"],
+        )
+
+        assert isinstance(request, RequestExportRequest)
+        # List gets converted to comma-separated string
+        assert request.fields == "ordertxid,time,pair,price"
+        assert response is mock_response
+
+
+class TestAccountChannelGetExportStatus:
+    """Tests for get_export_status method"""
+
+    def test_get_export_status_trades(self):
+        """Test get_export_status for trades"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=GetExportStatusResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = AccountChannel(mock_client)
+        request, response = channel.get_export_status(report="trades")
+
+        assert isinstance(request, GetExportStatusRequest)
+        assert request.report == "trades"
+        assert response is mock_response
+
+    def test_get_export_status_ledgers(self):
+        """Test get_export_status for ledgers"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=GetExportStatusResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = AccountChannel(mock_client)
+        request, response = channel.get_export_status(report="ledgers")
+
+        assert isinstance(request, GetExportStatusRequest)
+        assert request.report == "ledgers"
+        assert response is mock_response
+
+
+class TestAccountChannelRetrieveExport:
+    """Tests for retrieve_export method"""
+
+    def test_retrieve_export_basic(self):
+        """Test retrieve_export with export id"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=RetrieveExportResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = AccountChannel(mock_client)
+        request, response = channel.retrieve_export(id="TCJA")
+
+        assert isinstance(request, RetrieveExportRequest)
+        assert request.id == "TCJA"
+        assert response is mock_response
+
+
+class TestAccountChannelDeleteExport:
+    """Tests for delete_export method"""
+
+    def test_delete_export_with_delete_type(self):
+        """Test delete_export with type='delete'"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=DeleteExportResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = AccountChannel(mock_client)
+        request, response = channel.delete_export(id="TCJA", type="delete")
+
+        assert isinstance(request, DeleteExportRequest)
+        assert request.id == "TCJA"
+        assert request.type == "delete"
+        assert response is mock_response
+
+    def test_delete_export_with_cancel_type(self):
+        """Test delete_export with type='cancel'"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=DeleteExportResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = AccountChannel(mock_client)
+        request, response = channel.delete_export(id="TCJB", type="cancel")
+
+        assert isinstance(request, DeleteExportRequest)
+        assert request.id == "TCJB"
+        assert request.type == "cancel"
         assert response is mock_response
