@@ -13,11 +13,7 @@ class AccountChannel(ChannelInterface):
     """
 
     def __init__(self, client):
-        super().__init__(client, "account", True)  # True = private endpoint
-
-    # ========================================================================
-    # Balance Endpoints
-    # ========================================================================
+        super().__init__(client, "account", True)
 
     def get_balance(
         self, rebase_multiplier: REBASE_MULTIPLIER | None = None
@@ -108,10 +104,6 @@ class AccountChannel(ChannelInterface):
         """
         request = GetTradeBalanceRequest(asset=asset, rebase_multiplier=rebase_multiplier)
         return self._request(request)
-
-    # ========================================================================
-    # Order Endpoints
-    # ========================================================================
 
     def get_open_orders(
         self,
@@ -263,10 +255,6 @@ class AccountChannel(ChannelInterface):
         request = GetOrderAmendsRequest(order_id=order_id, rebase_multiplier=rebase_multiplier)
         return self._request(request)
 
-    # ========================================================================
-    # Trade Endpoints
-    # ========================================================================
-
     def get_trades_history(
         self,
         type: str | None = None,
@@ -347,10 +335,6 @@ class AccountChannel(ChannelInterface):
         request = QueryTradesRequest(txid=txid, trades=trades, rebase_multiplier=rebase_multiplier)
         return self._request(request)
 
-    # ========================================================================
-    # Position Endpoints
-    # ========================================================================
-
     def get_open_positions(
         self,
         txid: str | list[str] | None = None,
@@ -384,10 +368,6 @@ class AccountChannel(ChannelInterface):
             rebase_multiplier=rebase_multiplier,
         )
         return self._request(request)
-
-    # ========================================================================
-    # Ledger Endpoints
-    # ========================================================================
 
     def get_ledgers(
         self,
@@ -468,10 +448,6 @@ class AccountChannel(ChannelInterface):
         request = QueryLedgersRequest(id=id, trades=trades, rebase_multiplier=rebase_multiplier)
         return self._request(request)
 
-    # ========================================================================
-    # Volume/Fee Endpoints
-    # ========================================================================
-
     def get_trade_volume(
         self,
         pair: str | list[str] | None = None,
@@ -500,10 +476,6 @@ class AccountChannel(ChannelInterface):
         """
         request = GetTradeVolumeRequest(pair=pair, rebase_multiplier=rebase_multiplier)
         return self._request(request)
-
-    # ========================================================================
-    # Export Endpoints
-    # ========================================================================
 
     def request_export(
         self,
@@ -619,4 +591,71 @@ class AccountChannel(ChannelInterface):
             ...         print("Report cancelled successfully")
         """
         request = DeleteExportRequest(id=id, type=type)
+        return self._request(request)
+
+    def create_subaccount(
+        self,
+        username: str,
+        email: str,
+    ) -> Tuple[CreateSubaccountRequest, CreateSubaccountResponse]:
+        """Create a trading subaccount.
+
+        Args:
+            username: Username for the subaccount
+            email: Email address for the subaccount
+
+        Returns:
+            Tuple of request and response objects
+
+        Example:
+            >>> request, response = client.account.create_subaccount(
+            ...     username="subaccount1",
+            ...     email="sub@example.com"
+            ... )
+            >>> if response.is_success:
+            ...     print(f"Subaccount created: {response.success.result}")
+        """
+        request = CreateSubaccountRequest(username=username, email=email)
+        return self._request(request)
+
+    def account_transfer(
+        self,
+        asset: str,
+        amount: str | float,
+        from_account: str,
+        to_account: str,
+        asset_class: ASSET_CLASS = "currency",
+    ) -> Tuple[AccountTransferRequest, AccountTransferResponse]:
+        """Transfer funds between accounts.
+
+        Transfer funds to and from master and subaccounts.
+
+        Args:
+            asset: Asset being transferred
+            amount: Amount to transfer
+            from_account: IBAN of the source account
+            to_account: IBAN of the destination account
+            asset_class: Asset class (default: currency)
+
+        Returns:
+            Tuple of request and response objects
+
+        Example:
+            >>> request, response = client.account.account_transfer(
+            ...     asset="ZUSD",
+            ...     amount="1000.00",
+            ...     from_account="AB12-CD34-EF56-GH78",
+            ...     to_account="IJ90-KL12-MN34-OP56"
+            ... )
+            >>> if response.is_success:
+            ...     print(f"Transfer ID: {response.success.transfer.transfer_id}")
+            ...     print(f"Status: {response.success.transfer.status}")
+        """
+        request = AccountTransferRequest(
+            asset=asset,
+            amount=str(amount),
+            from_account=from_account,
+            to_account=to_account,
+            asset_class=asset_class,
+        )
         return self._request(request)

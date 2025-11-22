@@ -1464,3 +1464,130 @@ class DeleteExportResponse(BaseResponseWrapper[DeleteExportSuccess]):
             delete=result.get("delete"), cancel=result.get("cancel")
         )
         return cls(success=success_data)
+
+
+ASSET_CLASS = Literal["currency", "tokenized_asset"]
+TRANSFER_STATUS = Literal["pending", "complete"]
+
+
+class CreateSubaccountRequest(BaseRequestSchema):
+    """Request schema for Create Subaccount endpoint.
+
+    API Key Permissions Required:
+        Funds permissions - Withdraw
+
+    Usage Example:
+        >>> request = CreateSubaccountRequest(
+        ...     username="subaccount1",
+        ...     email="sub@example.com"
+        ... )
+    """
+
+    username: str = Field(..., description="Username for the subaccount.")
+    email: str = Field(..., description="Email address for the subaccount.")
+
+
+class CreateSubaccountSuccess(BaseSchema):
+    """Successful response from Create Subaccount endpoint."""
+
+    result: bool = Field(
+        ...,
+        description="Whether subaccount creation was successful or not.",
+    )
+
+
+class CreateSubaccountResponse(BaseResponseWrapper[CreateSubaccountSuccess]):
+    """Combined response wrapper for Create Subaccount API calls."""
+
+    @classmethod
+    def from_response(cls, response: dict | str) -> "CreateSubaccountResponse":
+        """Parse Kraken API response into the appropriate response model."""
+        if isinstance(response, str):
+            response = json.loads(response)
+
+        errors = response.get("error", [])
+        if errors:
+            return cls(failure=ResponseErrorSchema(error=errors))
+
+        result = response.get("result")
+        if result is None:
+            raise ValueError("Response missing 'result' field")
+
+        success_data = CreateSubaccountSuccess(result=result)
+        return cls(success=success_data)
+
+
+class AccountTransferRequest(BaseRequestSchema):
+    """Request schema for Account Transfer endpoint.
+
+    API Key Permissions Required:
+        Funds permissions - Withdraw
+
+    Usage Example:
+        >>> request = AccountTransferRequest(
+        ...     asset="XBT",
+        ...     amount="2.54",
+        ...     from_account="ABCD 1234 EFGH 5678",
+        ...     to_account="IJKL 0987 MNOP 6543"
+        ... )
+    """
+
+    asset: str = Field(..., description="Asset being transferred.")
+    asset_class: ASSET_CLASS = Field(
+        default="currency",
+        description="Specify the asset class of the asset being transferred.",
+    )
+    amount: str = Field(..., description="Amount of asset to transfer.")
+    from_account: str = Field(
+        ...,
+        validation_alias=AliasChoices("from_account", "from"),
+        serialization_alias="from",
+        description="IBAN of the source account.",
+    )
+    to_account: str = Field(
+        ...,
+        validation_alias=AliasChoices("to_account", "to"),
+        serialization_alias="to",
+        description="IBAN of the destination account.",
+    )
+
+
+class TransferResult(BaseSchema):
+    """Transfer result details."""
+
+    transfer_id: str = Field(..., description="Transfer ID.")
+    status: TRANSFER_STATUS = Field(
+        ...,
+        description="Transfer status, either 'pending' or 'complete'.",
+    )
+
+
+class AccountTransferSuccess(BaseSchema):
+    """Successful response from Account Transfer endpoint."""
+
+    transfer: TransferResult = Field(
+        ...,
+        description="Transfer result information.",
+    )
+
+
+class AccountTransferResponse(BaseResponseWrapper[AccountTransferSuccess]):
+    """Combined response wrapper for Account Transfer API calls."""
+
+    @classmethod
+    def from_response(cls, response: dict | str) -> "AccountTransferResponse":
+        """Parse Kraken API response into the appropriate response model."""
+        if isinstance(response, str):
+            response = json.loads(response)
+
+        errors = response.get("error", [])
+        if errors:
+            return cls(failure=ResponseErrorSchema(error=errors))
+
+        result = response.get("result")
+        if not result:
+            raise ValueError("Response missing 'result' field")
+
+        transfer_result = TransferResult(**result)
+        success_data = AccountTransferSuccess(transfer=transfer_result)
+        return cls(success=success_data)

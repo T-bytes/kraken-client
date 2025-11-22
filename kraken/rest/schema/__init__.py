@@ -46,6 +46,8 @@ SCHEMA_REGISTRY: dict[Type[BaseRequestSchema], tuple[str, Type[BaseResponseWrapp
     GetExportStatusRequest: ("ExportStatus", GetExportStatusResponse),
     RetrieveExportRequest: ("RetrieveExport", RetrieveExportResponse),
     DeleteExportRequest: ("RemoveExport", DeleteExportResponse),
+    CreateSubaccountRequest: ("CreateSubaccount", CreateSubaccountResponse),
+    AccountTransferRequest: ("AccountTransfer", AccountTransferResponse),
 }
 
 

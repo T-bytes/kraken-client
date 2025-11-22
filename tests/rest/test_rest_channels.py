@@ -7,6 +7,10 @@ import pytest
 from kraken.rest.channels import AccountChannel, MarketChannel, TradingChannel
 from kraken.rest.client import KrakenRESTClient
 from kraken.rest.schema.account import (
+    AccountTransferRequest,
+    AccountTransferResponse,
+    CreateSubaccountRequest,
+    CreateSubaccountResponse,
     DeleteExportRequest,
     DeleteExportResponse,
     GetBalanceRequest,
@@ -2028,4 +2032,119 @@ class TestAccountChannelDeleteExport:
         assert isinstance(request, DeleteExportRequest)
         assert request.id == "TCJB"
         assert request.type == "cancel"
+        assert response is mock_response
+
+
+class TestAccountChannelCreateSubaccount:
+    """Tests for create_subaccount method"""
+
+    def test_create_subaccount_with_valid_parameters(self):
+        """Test create_subaccount with valid parameters"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=CreateSubaccountResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = AccountChannel(mock_client)
+        request, response = channel.create_subaccount(
+            username="subaccount1", email="sub@example.com"
+        )
+
+        assert isinstance(request, CreateSubaccountRequest)
+        assert request.username == "subaccount1"
+        assert request.email == "sub@example.com"
+        assert response is mock_response
+
+    def test_create_subaccount_returns_tuple(self):
+        """Test that create_subaccount returns proper tuple"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=CreateSubaccountResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = AccountChannel(mock_client)
+        result = channel.create_subaccount(username="test", email="test@example.com")
+
+        assert isinstance(result, tuple)
+        assert len(result) == 2
+        request, response = result
+        assert isinstance(request, CreateSubaccountRequest)
+        assert response is mock_response
+
+
+class TestAccountChannelAccountTransfer:
+    """Tests for account_transfer method"""
+
+    def test_account_transfer_minimal_parameters(self):
+        """Test account_transfer with required parameters only"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=AccountTransferResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = AccountChannel(mock_client)
+        request, response = channel.account_transfer(
+            asset="XBT",
+            amount="2.54",
+            from_account="ABCD 1234 EFGH 5678",
+            to_account="IJKL 0987 MNOP 6543",
+        )
+
+        assert isinstance(request, AccountTransferRequest)
+        assert request.asset == "XBT"
+        assert request.amount == "2.54"
+        assert request.from_account == "ABCD 1234 EFGH 5678"
+        assert request.to_account == "IJKL 0987 MNOP 6543"
+        assert request.asset_class == "currency"
+        assert response is mock_response
+
+    def test_account_transfer_with_float_amount(self):
+        """Test account_transfer with float amount (gets converted to string)"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=AccountTransferResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = AccountChannel(mock_client)
+        request, response = channel.account_transfer(
+            asset="ZUSD",
+            amount=1000.50,
+            from_account="ABCD",
+            to_account="EFGH",
+        )
+
+        assert isinstance(request, AccountTransferRequest)
+        assert request.amount == "1000.5"
+        assert response is mock_response
+
+    def test_account_transfer_with_tokenized_asset_class(self):
+        """Test account_transfer with tokenized_asset asset class"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=AccountTransferResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = AccountChannel(mock_client)
+        request, response = channel.account_transfer(
+            asset="AAPL",
+            amount="10",
+            from_account="ABCD",
+            to_account="EFGH",
+            asset_class="tokenized_asset",
+        )
+
+        assert isinstance(request, AccountTransferRequest)
+        assert request.asset_class == "tokenized_asset"
+        assert response is mock_response
+
+    def test_account_transfer_returns_tuple(self):
+        """Test that account_transfer returns proper tuple"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=AccountTransferResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = AccountChannel(mock_client)
+        result = channel.account_transfer(
+            asset="XBT", amount="1", from_account="A", to_account="B"
+        )
+
+        assert isinstance(result, tuple)
+        assert len(result) == 2
+        request, response = result
+        assert isinstance(request, AccountTransferRequest)
         assert response is mock_response
