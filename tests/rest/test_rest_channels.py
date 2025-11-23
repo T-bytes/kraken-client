@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from kraken.rest.channels import AccountChannel, MarketChannel, TradingChannel
+from kraken.rest.channels import AccountChannel, FundingChannel, MarketChannel, TradingChannel
 from kraken.rest.client import KrakenRESTClient
 from kraken.rest.schema.account import (
     AccountTransferRequest,
@@ -45,6 +45,28 @@ from kraken.rest.schema.account import (
     RequestExportResponse,
     RetrieveExportRequest,
     RetrieveExportResponse,
+)
+from kraken.rest.schema.funding import (
+    GetDepositAddressesRequest,
+    GetDepositAddressesResponse,
+    GetDepositMethodsRequest,
+    GetDepositMethodsResponse,
+    GetDepositStatusRequest,
+    GetDepositStatusResponse,
+    GetWithdrawalAddressesRequest,
+    GetWithdrawalAddressesResponse,
+    GetWithdrawalInfoRequest,
+    GetWithdrawalInfoResponse,
+    GetWithdrawalMethodsRequest,
+    GetWithdrawalMethodsResponse,
+    GetWithdrawalStatusRequest,
+    GetWithdrawalStatusResponse,
+    RequestWalletTransferRequest,
+    RequestWalletTransferResponse,
+    RequestWithdrawalCancellationRequest,
+    WithdrawCancelResponse,
+    WithdrawFundsRequest,
+    WithdrawFundsResponse,
 )
 from kraken.rest.schema.market import (
     GetAssetInfoRequest,
@@ -2343,4 +2365,545 @@ class TestAccountChannelAccountTransfer:
         assert len(result) == 2
         request, response = result
         assert isinstance(request, AccountTransferRequest)
+        assert response is mock_response
+
+
+# ============================================================================
+# FundingChannel Tests
+# ============================================================================
+
+
+class TestFundingChannelInitialization:
+    """Tests for FundingChannel initialization"""
+
+    def test_init_with_client(self):
+        """Test FundingChannel initialization with a client"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        channel = FundingChannel(mock_client)
+
+        assert channel.client is mock_client
+        assert channel.channel == "funding"
+        assert channel.private is True
+
+    def test_path_property(self):
+        """Test that path property returns correct private path"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        channel = FundingChannel(mock_client)
+
+        assert channel.path == "/0/private/"
+
+
+class TestFundingChannelGetDepositMethods:
+    """Tests for get_deposit_methods method"""
+
+    def test_get_deposit_methods_with_asset(self):
+        """Test get_deposit_methods with required asset parameter"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=GetDepositMethodsResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = FundingChannel(mock_client)
+        request, response = channel.get_deposit_methods(asset="XBT")
+
+        assert isinstance(request, GetDepositMethodsRequest)
+        assert request.asset == "XBT"
+        assert request.aclass is None
+        assert response is mock_response
+
+    def test_get_deposit_methods_with_aclass(self):
+        """Test get_deposit_methods with aclass parameter"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=GetDepositMethodsResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = FundingChannel(mock_client)
+        request, response = channel.get_deposit_methods(asset="XBT", aclass="currency")
+
+        assert isinstance(request, GetDepositMethodsRequest)
+        assert request.asset == "XBT"
+        assert request.aclass == "currency"
+        assert response is mock_response
+
+    def test_get_deposit_methods_returns_tuple(self):
+        """Test that get_deposit_methods returns proper tuple"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=GetDepositMethodsResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = FundingChannel(mock_client)
+        result = channel.get_deposit_methods(asset="XBT")
+
+        assert isinstance(result, tuple)
+        assert len(result) == 2
+
+
+class TestFundingChannelGetDepositAddresses:
+    """Tests for get_deposit_addresses method"""
+
+    def test_get_deposit_addresses_minimal_parameters(self):
+        """Test get_deposit_addresses with required parameters"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=GetDepositAddressesResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = FundingChannel(mock_client)
+        request, response = channel.get_deposit_addresses(asset="XBT", method="Bitcoin")
+
+        assert isinstance(request, GetDepositAddressesRequest)
+        assert request.asset == "XBT"
+        assert request.method == "Bitcoin"
+        assert request.new is False
+        assert request.amount is None
+        assert response is mock_response
+
+    def test_get_deposit_addresses_with_new_true(self):
+        """Test get_deposit_addresses with new=True"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=GetDepositAddressesResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = FundingChannel(mock_client)
+        request, response = channel.get_deposit_addresses(asset="XBT", method="Bitcoin", new=True)
+
+        assert isinstance(request, GetDepositAddressesRequest)
+        assert request.new is True
+        assert response is mock_response
+
+    def test_get_deposit_addresses_with_amount(self):
+        """Test get_deposit_addresses with amount for Lightning"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=GetDepositAddressesResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = FundingChannel(mock_client)
+        request, response = channel.get_deposit_addresses(
+            asset="XBT", method="Bitcoin Lightning", amount="0.001"
+        )
+
+        assert isinstance(request, GetDepositAddressesRequest)
+        assert request.amount == "0.001"
+        assert response is mock_response
+
+    def test_get_deposit_addresses_all_parameters(self):
+        """Test get_deposit_addresses with all parameters"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=GetDepositAddressesResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = FundingChannel(mock_client)
+        request, response = channel.get_deposit_addresses(
+            asset="XBT",
+            method="Bitcoin",
+            new=True,
+            amount="0.5",
+            aclass="currency",
+        )
+
+        assert isinstance(request, GetDepositAddressesRequest)
+        assert request.asset == "XBT"
+        assert request.method == "Bitcoin"
+        assert request.new is True
+        assert request.amount == "0.5"
+        assert request.aclass == "currency"
+        assert response is mock_response
+
+
+class TestFundingChannelGetDepositStatus:
+    """Tests for get_deposit_status method"""
+
+    def test_get_deposit_status_no_parameters(self):
+        """Test get_deposit_status with no parameters"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=GetDepositStatusResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = FundingChannel(mock_client)
+        request, response = channel.get_deposit_status()
+
+        assert isinstance(request, GetDepositStatusRequest)
+        assert request.asset is None
+        assert request.method is None
+        assert response is mock_response
+
+    def test_get_deposit_status_with_asset(self):
+        """Test get_deposit_status with asset filter"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=GetDepositStatusResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = FundingChannel(mock_client)
+        request, response = channel.get_deposit_status(asset="XBT")
+
+        assert isinstance(request, GetDepositStatusRequest)
+        assert request.asset == "XBT"
+        assert response is mock_response
+
+    def test_get_deposit_status_with_pagination(self):
+        """Test get_deposit_status with pagination parameters"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=GetDepositStatusResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = FundingChannel(mock_client)
+        request, response = channel.get_deposit_status(cursor=True, limit=50)
+
+        assert isinstance(request, GetDepositStatusRequest)
+        assert request.cursor is True
+        assert request.limit == 50
+        assert response is mock_response
+
+    def test_get_deposit_status_all_parameters(self):
+        """Test get_deposit_status with all parameters"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=GetDepositStatusResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = FundingChannel(mock_client)
+        request, response = channel.get_deposit_status(
+            asset="XBT",
+            aclass="currency",
+            method="Bitcoin",
+            start="1609459200",
+            end="1612137600",
+            cursor=True,
+            limit=100,
+        )
+
+        assert isinstance(request, GetDepositStatusRequest)
+        assert request.asset == "XBT"
+        assert request.aclass == "currency"
+        assert request.method == "Bitcoin"
+        assert request.start == "1609459200"
+        assert request.end == "1612137600"
+        assert request.cursor is True
+        assert request.limit == 100
+        assert response is mock_response
+
+
+class TestFundingChannelGetWithdrawalMethods:
+    """Tests for get_withdrawal_methods method"""
+
+    def test_get_withdrawal_methods_no_parameters(self):
+        """Test get_withdrawal_methods with no parameters"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=GetWithdrawalMethodsResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = FundingChannel(mock_client)
+        request, response = channel.get_withdrawal_methods()
+
+        assert isinstance(request, GetWithdrawalMethodsRequest)
+        assert request.asset is None
+        assert request.network is None
+        assert response is mock_response
+
+    def test_get_withdrawal_methods_with_asset(self):
+        """Test get_withdrawal_methods with asset filter"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=GetWithdrawalMethodsResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = FundingChannel(mock_client)
+        request, response = channel.get_withdrawal_methods(asset="XBT")
+
+        assert isinstance(request, GetWithdrawalMethodsRequest)
+        assert request.asset == "XBT"
+        assert response is mock_response
+
+    def test_get_withdrawal_methods_with_network(self):
+        """Test get_withdrawal_methods with network filter"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=GetWithdrawalMethodsResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = FundingChannel(mock_client)
+        request, response = channel.get_withdrawal_methods(network="Bitcoin")
+
+        assert isinstance(request, GetWithdrawalMethodsRequest)
+        assert request.network == "Bitcoin"
+        assert response is mock_response
+
+
+class TestFundingChannelGetWithdrawalAddresses:
+    """Tests for get_withdrawal_addresses method"""
+
+    def test_get_withdrawal_addresses_no_parameters(self):
+        """Test get_withdrawal_addresses with no parameters"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=GetWithdrawalAddressesResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = FundingChannel(mock_client)
+        request, response = channel.get_withdrawal_addresses()
+
+        assert isinstance(request, GetWithdrawalAddressesRequest)
+        assert request.asset is None
+        assert request.verified is None
+        assert response is mock_response
+
+    def test_get_withdrawal_addresses_with_verified(self):
+        """Test get_withdrawal_addresses with verified filter"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=GetWithdrawalAddressesResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = FundingChannel(mock_client)
+        request, response = channel.get_withdrawal_addresses(verified=True)
+
+        assert isinstance(request, GetWithdrawalAddressesRequest)
+        assert request.verified is True
+        assert response is mock_response
+
+    def test_get_withdrawal_addresses_with_key(self):
+        """Test get_withdrawal_addresses with key filter"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=GetWithdrawalAddressesResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = FundingChannel(mock_client)
+        request, response = channel.get_withdrawal_addresses(key="btc_main")
+
+        assert isinstance(request, GetWithdrawalAddressesRequest)
+        assert request.key == "btc_main"
+        assert response is mock_response
+
+
+class TestFundingChannelGetWithdrawalInfo:
+    """Tests for get_withdrawal_info method"""
+
+    def test_get_withdrawal_info_basic(self):
+        """Test get_withdrawal_info with required parameters"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=GetWithdrawalInfoResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = FundingChannel(mock_client)
+        request, response = channel.get_withdrawal_info(
+            asset="XBT", key="btc_testnet", amount="0.725"
+        )
+
+        assert isinstance(request, GetWithdrawalInfoRequest)
+        assert request.asset == "XBT"
+        assert request.key == "btc_testnet"
+        assert request.amount == "0.725"
+        assert response is mock_response
+
+    def test_get_withdrawal_info_with_float_amount(self):
+        """Test get_withdrawal_info with float amount"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=GetWithdrawalInfoResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = FundingChannel(mock_client)
+        request, response = channel.get_withdrawal_info(asset="XBT", key="btc_testnet", amount=0.5)
+
+        assert isinstance(request, GetWithdrawalInfoRequest)
+        assert request.amount == "0.5"
+        assert response is mock_response
+
+
+class TestFundingChannelWithdrawFunds:
+    """Tests for withdraw_funds method"""
+
+    def test_withdraw_funds_minimal_parameters(self):
+        """Test withdraw_funds with required parameters"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=WithdrawFundsResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = FundingChannel(mock_client)
+        request, response = channel.withdraw_funds(asset="XBT", key="btc_2709", amount="0.725")
+
+        assert isinstance(request, WithdrawFundsRequest)
+        assert request.asset == "XBT"
+        assert request.key == "btc_2709"
+        assert request.amount == "0.725"
+        assert request.address is None
+        assert request.max_fee is None
+        assert response is mock_response
+
+    def test_withdraw_funds_with_address(self):
+        """Test withdraw_funds with address verification"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=WithdrawFundsResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = FundingChannel(mock_client)
+        request, response = channel.withdraw_funds(
+            asset="XBT",
+            key="btc_2709",
+            amount="0.725",
+            address="bc1kar0ssrr7xf3vy5l6d3lydnwkre5og2z3f51dq",
+        )
+
+        assert isinstance(request, WithdrawFundsRequest)
+        assert request.address == "bc1kar0ssrr7xf3vy5l6d3lydnwkre5og2z3f51dq"
+        assert response is mock_response
+
+    def test_withdraw_funds_with_max_fee(self):
+        """Test withdraw_funds with max_fee"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=WithdrawFundsResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = FundingChannel(mock_client)
+        request, response = channel.withdraw_funds(
+            asset="XBT", key="btc_2709", amount="0.725", max_fee="0.0001"
+        )
+
+        assert isinstance(request, WithdrawFundsRequest)
+        assert request.max_fee == "0.0001"
+        assert response is mock_response
+
+    def test_withdraw_funds_with_float_amount(self):
+        """Test withdraw_funds with float amount"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=WithdrawFundsResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = FundingChannel(mock_client)
+        request, response = channel.withdraw_funds(asset="XBT", key="btc_2709", amount=0.5)
+
+        assert isinstance(request, WithdrawFundsRequest)
+        assert request.amount == "0.5"
+        assert response is mock_response
+
+
+class TestFundingChannelGetWithdrawalStatus:
+    """Tests for get_withdrawal_status method"""
+
+    def test_get_withdrawal_status_no_parameters(self):
+        """Test get_withdrawal_status with no parameters"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=GetWithdrawalStatusResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = FundingChannel(mock_client)
+        request, response = channel.get_withdrawal_status()
+
+        assert isinstance(request, GetWithdrawalStatusRequest)
+        assert request.asset is None
+        assert request.method is None
+        assert response is mock_response
+
+    def test_get_withdrawal_status_with_asset(self):
+        """Test get_withdrawal_status with asset filter"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=GetWithdrawalStatusResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = FundingChannel(mock_client)
+        request, response = channel.get_withdrawal_status(asset="XBT")
+
+        assert isinstance(request, GetWithdrawalStatusRequest)
+        assert request.asset == "XBT"
+        assert response is mock_response
+
+    def test_get_withdrawal_status_with_pagination(self):
+        """Test get_withdrawal_status with pagination"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=GetWithdrawalStatusResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = FundingChannel(mock_client)
+        request, response = channel.get_withdrawal_status(cursor=True, limit=100)
+
+        assert isinstance(request, GetWithdrawalStatusRequest)
+        assert request.cursor is True
+        assert request.limit == 100
+        assert response is mock_response
+
+
+class TestFundingChannelRequestWithdrawalCancellation:
+    """Tests for request_withdrawal_cancellation method"""
+
+    def test_request_withdrawal_cancellation_basic(self):
+        """Test request_withdrawal_cancellation with required parameters"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=WithdrawCancelResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = FundingChannel(mock_client)
+        request, response = channel.request_withdrawal_cancellation(
+            asset="XBT", refid="FTQcuak-V6Za8qrWnhzTx67yYHz8Tg"
+        )
+
+        assert isinstance(request, RequestWithdrawalCancellationRequest)
+        assert request.asset == "XBT"
+        assert request.refid == "FTQcuak-V6Za8qrWnhzTx67yYHz8Tg"
+        assert response is mock_response
+
+    def test_request_withdrawal_cancellation_returns_tuple(self):
+        """Test that request_withdrawal_cancellation returns proper tuple"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=WithdrawCancelResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = FundingChannel(mock_client)
+        result = channel.request_withdrawal_cancellation(asset="XBT", refid="ABC123")
+
+        assert isinstance(result, tuple)
+        assert len(result) == 2
+
+
+class TestFundingChannelRequestWalletTransfer:
+    """Tests for request_wallet_transfer method"""
+
+    def test_request_wallet_transfer_basic(self):
+        """Test request_wallet_transfer with required parameters"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=RequestWalletTransferResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = FundingChannel(mock_client)
+        request, response = channel.request_wallet_transfer(
+            asset="XBT",
+            from_wallet="Spot Wallet",
+            to_wallet="Futures Wallet",
+            amount="2.54",
+        )
+
+        assert isinstance(request, RequestWalletTransferRequest)
+        assert request.asset == "XBT"
+        assert request.from_wallet == "Spot Wallet"
+        assert request.to_wallet == "Futures Wallet"
+        assert request.amount == "2.54"
+        assert response is mock_response
+
+    def test_request_wallet_transfer_with_float_amount(self):
+        """Test request_wallet_transfer with float amount"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=RequestWalletTransferResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = FundingChannel(mock_client)
+        request, response = channel.request_wallet_transfer(
+            asset="XBT",
+            from_wallet="Spot Wallet",
+            to_wallet="Futures Wallet",
+            amount=1.5,
+        )
+
+        assert isinstance(request, RequestWalletTransferRequest)
+        assert request.amount == "1.5"
+        assert response is mock_response
+
+    def test_request_wallet_transfer_returns_tuple(self):
+        """Test that request_wallet_transfer returns proper tuple"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=RequestWalletTransferResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = FundingChannel(mock_client)
+        result = channel.request_wallet_transfer(
+            asset="XBT",
+            from_wallet="Spot Wallet",
+            to_wallet="Futures Wallet",
+            amount="1.0",
+        )
+
+        assert isinstance(result, tuple)
+        assert len(result) == 2
+        request, response = result
+        assert isinstance(request, RequestWalletTransferRequest)
         assert response is mock_response
