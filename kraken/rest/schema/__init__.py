@@ -19,6 +19,8 @@ SCHEMA_REGISTRY: dict[Type[BaseRequestSchema], tuple[str, Type[BaseResponseWrapp
     GetOrderBookRequest: ("Depth", GetOrderBookResponse),
     GetRecentTradesRequest: ("Trades", GetRecentTradesResponse),
     GetRecentSpreadsRequest: ("Spread", GetRecentSpreadsResponse),
+    GetPreTradeDataRequest: ("PreTrade", GetPreTradeDataResponse),
+    GetPostTradeDataRequest: ("PostTrade", GetPostTradeDataResponse),
     # Trading endpoints
     AddOrderRequest: ("AddOrder", AddOrderResponse),
     AmendOrderRequest: ("EditOrder", AmendOrderResponse),

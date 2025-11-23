@@ -1531,3 +1531,361 @@ class GetRecentSpreadsResponse(BaseResponseWrapper[GetRecentSpreadsSuccess]):
 
         success_data = GetRecentSpreadsSuccess(spreads=spreads, last=last)
         return cls(success=success_data)
+
+
+class PreTradeOrderBookEntry(BaseSchema):
+    """Individual order book entry (bid or ask) from Pre-Trade Data API.
+
+    Represents a price level in the aggregated order book with price, quantity,
+    order count, and publication timestamp.
+    """
+
+    side: Literal["BUY", "SELL"] = Field(
+        ...,
+        description="Indicates whether the price level is a bid (BUY) or offer (SELL).",
+    )
+    price: str = Field(
+        ...,
+        description="Price level in the Central Limit Order Book (CLOB). Price as string for precision.",
+    )
+    qty: str = Field(
+        ...,
+        description="The aggregated quantity at the price level. Quantity as string for precision.",
+    )
+    count: int = Field(
+        ...,
+        description="The number of orders in the price level.",
+    )
+    publication_ts: str = Field(
+        ...,
+        description="Timestamp the price level was last updated and published (ISO 8601).",
+    )
+
+
+class PreTradeData(BaseSchema):
+    """Aggregated order book data from Pre-Trade Data API.
+
+    Contains the top price levels of the aggregated order book for a trading pair,
+    including symbol information and bid/ask arrays.
+    """
+
+    symbol: str = Field(
+        ...,
+        description="The symbol of the currency pair (e.g., 'BTC/USD').",
+    )
+    description: str = Field(
+        ...,
+        description="The full description of the currency pair (e.g., 'Bitcoin / US Dollars').",
+    )
+    base_asset: str = Field(
+        ...,
+        description="Currency code for the base asset (e.g., 'BTC').",
+    )
+    base_notation: Literal["NMNL"] = Field(
+        ...,
+        description="Indicates that the quantity is expressed in nominal value.",
+    )
+    quote_asset: str = Field(
+        ...,
+        description="Currency in which the trading price is expressed (e.g., 'USD').",
+    )
+    quote_notation: Literal["MONE"] = Field(
+        ...,
+        description="Indicates that the price is expressed in monetary value.",
+    )
+    venue: str = Field(
+        ...,
+        description="Market Identifier Code (MIC) of the trading platform where the order was submitted.",
+    )
+    system: Literal["CLOB"] = Field(
+        ...,
+        description="Indicates the order system is a Central Limit Order Book.",
+    )
+    bids: list[PreTradeOrderBookEntry] = Field(
+        default_factory=list,
+        description="Array of bid entries (buy orders).",
+    )
+    asks: list[PreTradeOrderBookEntry] = Field(
+        default_factory=list,
+        description="Array of ask entries (sell orders).",
+    )
+
+
+class GetPreTradeDataRequest(BaseRequestSchema):
+    """Schema for Kraken GetPreTradeData API request.
+
+    This schema validates and prepares data for submission to Kraken's
+    Pre-Trade Data API endpoint, which returns the price levels in the order book
+    with aggregated order quantities at each price level. The top 10 levels are
+    returned for each trading pair.
+
+    Important Notes:
+        - This is a public endpoint that requires no authentication.
+        - The 'symbol' parameter is required.
+        - Use to_api_dict() to serialize for API submission.
+
+    Usage Examples:
+        Get pre-trade data for a single pair:
+        >>> pre_trade_request = GetPreTradeDataRequest(symbol="BTC/USD")
+        >>> data = pre_trade_request.to_api_dict()
+        >>> response = client.request("PreTrade", data=data)
+
+        Async usage:
+        >>> pre_trade_request = GetPreTradeDataRequest(symbol="ETH/USD")
+        >>> response = await client.arequest("PreTrade", data=pre_trade_request.to_api_dict())
+    """
+
+    symbol: str = Field(
+        ...,
+        min_length=3,
+        max_length=32,
+        description="The symbol of the currency pair (e.g., 'BTC/USD').",
+    )
+
+
+class GetPreTradeDataSuccess(BaseSchema):
+    """Successful GetPreTradeData response from Kraken API.
+
+    Contains the aggregated order book data for the requested trading pair.
+    """
+
+    data: PreTradeData = Field(
+        ...,
+        description="The aggregated order book data for the trading pair.",
+    )
+
+
+class GetPreTradeDataResponse(BaseResponseWrapper[GetPreTradeDataSuccess]):
+    """Combined response wrapper for GetPreTradeData API calls.
+
+    This wrapper handles both success and error cases from the Kraken API.
+    Use the `is_success` property to determine the outcome and access the
+    appropriate `success` or `error` attribute.
+    """
+
+    @classmethod
+    def from_response(cls, response: dict | str) -> "GetPreTradeDataResponse":
+        """Parse a Kraken API response into the appropriate response model.
+
+        Args:
+            response: Either a JSON string or dict containing the API response
+
+        Returns:
+            GetPreTradeDataResponse with either success or error data populated
+
+        Raises:
+            ValueError: If the response format is invalid
+        """
+        if isinstance(response, str):
+            response = json.loads(response)
+        errors = response.get("error", [])
+        if errors:
+            error_data = ResponseErrorSchema(error=errors)
+            return cls(failure=error_data)
+        result = response.get("result")
+        if result is None:
+            raise ValueError("Response missing 'result' field")
+
+        # Parse bids and asks
+        bids = [PreTradeOrderBookEntry(**entry) for entry in result.get("bids", [])]
+        asks = [PreTradeOrderBookEntry(**entry) for entry in result.get("asks", [])]
+
+        pre_trade_data = PreTradeData(
+            symbol=result["symbol"],
+            description=result["description"],
+            base_asset=result["base_asset"],
+            base_notation=result["base_notation"],
+            quote_asset=result["quote_asset"],
+            quote_notation=result["quote_notation"],
+            venue=result["venue"],
+            system=result["system"],
+            bids=bids,
+            asks=asks,
+        )
+        success_data = GetPreTradeDataSuccess(data=pre_trade_data)
+        return cls(success=success_data)
+
+
+class PostTradeEntry(BaseSchema):
+    """Individual trade entry from Post-Trade Data API.
+
+    Represents a single executed trade with detailed information including
+    trade ID, price, quantity, timestamps, and venue information.
+    """
+
+    trade_id: str = Field(
+        ...,
+        description="Kraken unique trade identifier (max 19 characters).",
+    )
+    price: str = Field(
+        ...,
+        description="Trade price excluding fees and commissions. Price as string for precision.",
+    )
+    quantity: str = Field(
+        ...,
+        description="Unconsolidated trade quantity from execution. Quantity as string for precision.",
+    )
+    symbol: str = Field(
+        ...,
+        description="The symbol of the currency pair (e.g., 'BTC/USD').",
+    )
+    description: str = Field(
+        ...,
+        description="The full description of the currency pair (e.g., 'Bitcoin / US Dollars').",
+    )
+    base_asset: str = Field(
+        ...,
+        description="Currency code for the base asset (e.g., 'BTC').",
+    )
+    base_notation: Literal["UNIT"] = Field(
+        ...,
+        description="Indicates that the quantity is expressed in unit value.",
+    )
+    quote_asset: str = Field(
+        ...,
+        description="Currency in which the trading price is expressed (e.g., 'USD').",
+    )
+    quote_notation: Literal["MONE"] = Field(
+        ...,
+        description="Indicates that the price is expressed in monetary value.",
+    )
+    trade_venue: str = Field(
+        ...,
+        description="Market Identifier Code (MIC) of the trading platform where the trade was executed.",
+    )
+    trade_ts: str = Field(
+        ...,
+        description="Timestamp the trade was matched in the engine to microsecond precision (ISO 8601).",
+    )
+    publication_venue: str = Field(
+        ...,
+        description="Market Identifier Code (MIC) of the trading platform where the trade was published.",
+    )
+    publication_ts: str = Field(
+        ...,
+        description="Timestamp the trade was published to market data streams (ISO 8601).",
+    )
+
+
+class GetPostTradeDataRequest(BaseRequestSchema):
+    """Schema for Kraken GetPostTradeData API request.
+
+    This schema validates and prepares data for submission to Kraken's
+    Post-Trade Data API endpoint, which returns a list of trades on the spot exchange.
+    If no filter parameters are specified, the last 1000 trades for all pairs are received.
+
+    Important Notes:
+        - This is a public endpoint that requires no authentication.
+        - All parameters are optional.
+        - The 'count' parameter controls the number of trades returned (default: 1000, max: 1000).
+        - Use 'from_ts' and 'to_ts' for time-based filtering.
+        - Use to_api_dict() to serialize for API submission.
+
+    Usage Examples:
+        Get recent trades for all pairs:
+        >>> post_trade_request = GetPostTradeDataRequest()
+        >>> data = post_trade_request.to_api_dict()
+        >>> response = client.request("PostTrade", data=data)
+
+        Get trades for a specific symbol:
+        >>> post_trade_request = GetPostTradeDataRequest(symbol="BTC/USD")
+        >>> data = post_trade_request.to_api_dict()
+        >>> response = client.request("PostTrade", data=data)
+
+        Get trades with time filter:
+        >>> post_trade_request = GetPostTradeDataRequest(
+        ...     symbol="BTC/USD",
+        ...     from_ts="2024-05-30T12:34:56.1234567892Z",
+        ...     count=100
+        ... )
+        >>> response = client.request("PostTrade", data=post_trade_request.to_api_dict())
+
+        Async usage:
+        >>> post_trade_request = GetPostTradeDataRequest(symbol="ETH/USD", count=50)
+        >>> response = await client.arequest("PostTrade", data=post_trade_request.to_api_dict())
+    """
+
+    symbol: str | None = Field(
+        default=None,
+        min_length=3,
+        max_length=32,
+        description="Filter the results to the currency pair (e.g., 'BTC/USD').",
+    )
+    from_ts: str | None = Field(
+        default=None,
+        description="Filter the results to include the trades after this timestamp (ISO 8601).",
+    )
+    to_ts: str | None = Field(
+        default=None,
+        description="Filter the results to include the trades before or at this timestamp (ISO 8601).",
+    )
+    count: int | None = Field(
+        default=None,
+        ge=1,
+        le=1000,
+        description="The maximum number of trades to return (1-1000, default 1000).",
+    )
+
+
+class GetPostTradeDataSuccess(BaseSchema):
+    """Successful GetPostTradeData response from Kraken API.
+
+    Contains a list of trades with pagination information.
+    """
+
+    last_ts: str = Field(
+        ...,
+        description="Timestamp of the latest trade in the list. Can be used as 'from_ts' for pagination.",
+    )
+    count: int = Field(
+        ...,
+        ge=0,
+        le=1000,
+        description="The number of trades returned.",
+    )
+    trades: list[PostTradeEntry] = Field(
+        default_factory=list,
+        description="A list of trades in ascending timestamp order (max 1000).",
+    )
+
+
+class GetPostTradeDataResponse(BaseResponseWrapper[GetPostTradeDataSuccess]):
+    """Combined response wrapper for GetPostTradeData API calls.
+
+    This wrapper handles both success and error cases from the Kraken API.
+    Use the `is_success` property to determine the outcome and access the
+    appropriate `success` or `error` attribute.
+    """
+
+    @classmethod
+    def from_response(cls, response: dict | str) -> "GetPostTradeDataResponse":
+        """Parse a Kraken API response into the appropriate response model.
+
+        Args:
+            response: Either a JSON string or dict containing the API response
+
+        Returns:
+            GetPostTradeDataResponse with either success or error data populated
+
+        Raises:
+            ValueError: If the response format is invalid
+        """
+        if isinstance(response, str):
+            response = json.loads(response)
+        errors = response.get("error", [])
+        if errors:
+            error_data = ResponseErrorSchema(error=errors)
+            return cls(failure=error_data)
+        result = response.get("result")
+        if result is None:
+            raise ValueError("Response missing 'result' field")
+
+        last_ts = result.get("last_ts")
+        if last_ts is None:
+            raise ValueError("Response result missing 'last_ts' field")
+
+        count = result.get("count", 0)
+        trades = [PostTradeEntry(**trade) for trade in result.get("trades", [])]
+
+        success_data = GetPostTradeDataSuccess(last_ts=last_ts, count=count, trades=trades)
+        return cls(success=success_data)

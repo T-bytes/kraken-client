@@ -76,3 +76,46 @@ class MarketChannel(ChannelInterface):
     ) -> Tuple[GetRecentSpreadsRequest, GetRecentSpreadsResponse]:
         request = GetRecentSpreadsRequest(pair=pair, since=since, asset_class=aclass)
         return self._request(request)
+
+    def pre_trade_data(
+        self, symbol: str
+    ) -> Tuple[GetPreTradeDataRequest, GetPreTradeDataResponse]:
+        """Get pre-trade order book data for a symbol.
+
+        Returns the price levels in the order book with aggregated order quantities
+        at each price level. The top 10 levels are returned for each trading pair.
+
+        Args:
+            symbol: The symbol of the currency pair (e.g., 'BTC/USD').
+
+        Returns:
+            Tuple of (request, response) where request is the GetPreTradeDataRequest
+            and response is the GetPreTradeDataResponse.
+        """
+        request = GetPreTradeDataRequest(symbol=symbol)
+        return self._request(request)
+
+    def post_trade_data(
+        self,
+        symbol: str | None = None,
+        from_ts: str | None = None,
+        to_ts: str | None = None,
+        count: int | None = None,
+    ) -> Tuple[GetPostTradeDataRequest, GetPostTradeDataResponse]:
+        """Get post-trade data (recent trades) for a symbol.
+
+        Returns a list of trades on the spot exchange. If no filter parameters
+        are specified, the last 1000 trades for all pairs are received.
+
+        Args:
+            symbol: Filter the results to the currency pair (e.g., 'BTC/USD').
+            from_ts: Filter the results to include trades after this timestamp (ISO 8601).
+            to_ts: Filter the results to include trades before/at this timestamp (ISO 8601).
+            count: The maximum number of trades to return (1-1000, default 1000).
+
+        Returns:
+            Tuple of (request, response) where request is the GetPostTradeDataRequest
+            and response is the GetPostTradeDataResponse.
+        """
+        request = GetPostTradeDataRequest(symbol=symbol, from_ts=from_ts, to_ts=to_ts, count=count)
+        return self._request(request)

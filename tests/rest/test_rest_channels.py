@@ -55,6 +55,10 @@ from kraken.rest.schema.market import (
     GetOHLCDataResponse,
     GetOrderBookRequest,
     GetOrderBookResponse,
+    GetPostTradeDataRequest,
+    GetPostTradeDataResponse,
+    GetPreTradeDataRequest,
+    GetPreTradeDataResponse,
     GetRecentSpreadsRequest,
     GetRecentSpreadsResponse,
     GetRecentTradesRequest,
@@ -898,6 +902,198 @@ class TestMarketChannelRecentSpreads:
         assert request.since == 1609459200
         assert request.asset_class == "tokenized_asset"
         assert response is mock_response
+
+
+class TestMarketChannelPreTradeData:
+    """Tests for pre_trade_data method"""
+
+    def test_pre_trade_data_basic(self):
+        """Test pre_trade_data with required symbol parameter"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=GetPreTradeDataResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = MarketChannel(mock_client)
+        request, response = channel.pre_trade_data(symbol="BTC/USD")
+
+        assert isinstance(request, GetPreTradeDataRequest)
+        assert request.symbol == "BTC/USD"
+        assert response is mock_response
+
+    def test_pre_trade_data_with_eth_symbol(self):
+        """Test pre_trade_data with ETH/USD symbol"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=GetPreTradeDataResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = MarketChannel(mock_client)
+        request, response = channel.pre_trade_data(symbol="ETH/USD")
+
+        assert isinstance(request, GetPreTradeDataRequest)
+        assert request.symbol == "ETH/USD"
+        assert response is mock_response
+
+    def test_pre_trade_data_returns_tuple(self):
+        """Test that pre_trade_data returns proper tuple"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=GetPreTradeDataResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = MarketChannel(mock_client)
+        result = channel.pre_trade_data(symbol="BTC/USD")
+
+        assert isinstance(result, tuple)
+        assert len(result) == 2
+        request, response = result
+        assert isinstance(request, GetPreTradeDataRequest)
+        assert response is mock_response
+
+    def test_pre_trade_data_request_called_with_correct_schema(self):
+        """Test that pre_trade_data calls client.request with correct schema"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=GetPreTradeDataResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = MarketChannel(mock_client)
+        request, _ = channel.pre_trade_data(symbol="BTC/USD")
+
+        mock_client.request.assert_called_once_with(request)
+
+
+class TestMarketChannelPostTradeData:
+    """Tests for post_trade_data method"""
+
+    def test_post_trade_data_no_parameters(self):
+        """Test post_trade_data with no parameters"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=GetPostTradeDataResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = MarketChannel(mock_client)
+        request, response = channel.post_trade_data()
+
+        assert isinstance(request, GetPostTradeDataRequest)
+        assert request.symbol is None
+        assert request.from_ts is None
+        assert request.to_ts is None
+        assert request.count is None
+        assert response is mock_response
+
+    def test_post_trade_data_with_symbol(self):
+        """Test post_trade_data with symbol parameter"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=GetPostTradeDataResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = MarketChannel(mock_client)
+        request, response = channel.post_trade_data(symbol="BTC/USD")
+
+        assert isinstance(request, GetPostTradeDataRequest)
+        assert request.symbol == "BTC/USD"
+        assert response is mock_response
+
+    def test_post_trade_data_with_from_ts(self):
+        """Test post_trade_data with from_ts parameter"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=GetPostTradeDataResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = MarketChannel(mock_client)
+        request, response = channel.post_trade_data(
+            symbol="BTC/USD", from_ts="2024-05-30T12:34:56.1234567892Z"
+        )
+
+        assert isinstance(request, GetPostTradeDataRequest)
+        assert request.from_ts == "2024-05-30T12:34:56.1234567892Z"
+        assert response is mock_response
+
+    def test_post_trade_data_with_to_ts(self):
+        """Test post_trade_data with to_ts parameter"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=GetPostTradeDataResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = MarketChannel(mock_client)
+        request, response = channel.post_trade_data(
+            symbol="BTC/USD", to_ts="2024-05-30T12:34:56.1234567892Z"
+        )
+
+        assert isinstance(request, GetPostTradeDataRequest)
+        assert request.to_ts == "2024-05-30T12:34:56.1234567892Z"
+        assert response is mock_response
+
+    def test_post_trade_data_with_count(self):
+        """Test post_trade_data with count parameter"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=GetPostTradeDataResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = MarketChannel(mock_client)
+        request, response = channel.post_trade_data(symbol="BTC/USD", count=100)
+
+        assert isinstance(request, GetPostTradeDataRequest)
+        assert request.count == 100
+        assert response is mock_response
+
+    def test_post_trade_data_with_count_max(self):
+        """Test post_trade_data with count=1000 (max)"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=GetPostTradeDataResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = MarketChannel(mock_client)
+        request, response = channel.post_trade_data(symbol="ETH/USD", count=1000)
+
+        assert isinstance(request, GetPostTradeDataRequest)
+        assert request.count == 1000
+        assert response is mock_response
+
+    def test_post_trade_data_all_parameters(self):
+        """Test post_trade_data with all parameters"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=GetPostTradeDataResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = MarketChannel(mock_client)
+        request, response = channel.post_trade_data(
+            symbol="BTC/USD",
+            from_ts="2024-05-30T12:00:00Z",
+            to_ts="2024-05-30T18:00:00Z",
+            count=500,
+        )
+
+        assert isinstance(request, GetPostTradeDataRequest)
+        assert request.symbol == "BTC/USD"
+        assert request.from_ts == "2024-05-30T12:00:00Z"
+        assert request.to_ts == "2024-05-30T18:00:00Z"
+        assert request.count == 500
+        assert response is mock_response
+
+    def test_post_trade_data_returns_tuple(self):
+        """Test that post_trade_data returns proper tuple"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=GetPostTradeDataResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = MarketChannel(mock_client)
+        result = channel.post_trade_data()
+
+        assert isinstance(result, tuple)
+        assert len(result) == 2
+        request, response = result
+        assert isinstance(request, GetPostTradeDataRequest)
+        assert response is mock_response
+
+    def test_post_trade_data_request_called_with_correct_schema(self):
+        """Test that post_trade_data calls client.request with correct schema"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=GetPostTradeDataResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = MarketChannel(mock_client)
+        request, _ = channel.post_trade_data(symbol="BTC/USD")
+
+        mock_client.request.assert_called_once_with(request)
 
 
 class TestTradingChannelInitialization:
