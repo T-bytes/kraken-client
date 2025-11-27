@@ -7,7 +7,7 @@ from uuid import uuid4
 def bool_from_str(value: str | bool) -> bool:
     if isinstance(value, bool):
         return value
-    value = value.lower()
+    value = value.lower().strip()
     if value in ("true", "t", "yes", "y", "on", "1"):
         return True
     elif value in ("false", "f", "no", "n", "off", "0"):
