@@ -56,19 +56,12 @@ from typing import Any, Dict, Optional, TypeVar, overload
 
 import httpx
 
-from kraken.exceptions import (
-    KrakenAPIError,
-    KrakenConnectionError,
-    KrakenHTTPError,
-    KrakenPayloadError,
-    KrakenTimeoutError,
-)
+from kraken.exceptions import *
+from kraken.limiter import RateLimiter
 from kraken.rest.channels import KrakenChannel
-from kraken.rest.schema import *
-from kraken.rest.schema import get_endpoint_info
+from kraken.rest.schema import BaseRequestSchema, BaseResponseWrapper, get_endpoint_info
 from kraken.utilities import get_nonce
 
-# Type variable for generic schema-based requests
 TRequest = TypeVar("TRequest", bound=BaseRequestSchema)
 TResponse = TypeVar("TResponse", bound=BaseResponseWrapper)
 
@@ -122,10 +115,17 @@ class KrakenRESTClient:
     """
 
     API_DOMAIN = "https://api.kraken.com"
-    USER_AGENT = "Kraken REST API Client/2.0"
+    USER_AGENT = "Kraken-Python-Client/0.1.0"
 
     def __init__(
-        self, api_key: str | None = None, api_secret: str | None = None, timeout: int = 30
+        self,
+        api_key: str | None = None,
+        api_secret: str | None = None,
+        timeout: int = 30,
+        tier: str | None = None,
+        enable_rate_limiting: bool = True,
+        otp: str | None = None,
+        user: str | None = None,
     ):
         """Initialize the Kraken REST client.
 
@@ -135,6 +135,11 @@ class KrakenRESTClient:
             api_secret: API secret for authentication. If not provided, reads from
                 KRAKEN_API_SECRET environment variable.
             timeout: Request timeout in seconds. Default is 30.
+            tier: Rate limit tier (starter, intermediate, pro). If not provided,
+                reads from KRAKEN_RATE_LIMIT_TIER environment variable (default: starter).
+            enable_rate_limiting: Enable client-side rate limiting. Default is True.
+            otp: One-time password for 2FA-enabled API keys. If not provided, reads from
+                KRAKEN_OTP environment variable. Only required if API key has 2FA enabled.
 
         Raises:
             ValueError: If API secret format is invalid
@@ -149,8 +154,20 @@ class KrakenRESTClient:
                 logger.error(f"Failed to decode API secret: {e}")
                 raise ValueError(f"Invalid API secret format: {e}") from e
         self.timeout = timeout
+        self.otp = otp or os.getenv("KRAKEN_OTP")
+        self.user = user or self.USER_AGENT
         self._sync_client: Optional[httpx.Client] = None
         self._async_client: Optional[httpx.AsyncClient] = None
+
+        # Rate limiting
+        self.enable_rate_limiting = enable_rate_limiting
+        self.rate_limiter: Optional[RateLimiter] = None
+        if enable_rate_limiting:
+            from kraken.constants import RATE_LIMIT_TIER
+
+            rate_tier = tier or RATE_LIMIT_TIER
+            self.rate_limiter = RateLimiter(tier=rate_tier)
+
         logger.info("Kraken REST client initialized")
 
     def __enter__(self):
@@ -194,7 +211,7 @@ class KrakenRESTClient:
         """
         if self._sync_client is None:
             self._sync_client = httpx.Client(
-                headers={"User-Agent": self.USER_AGENT}, timeout=self.timeout
+                headers={"User-Agent": self.user}, timeout=self.timeout
             )
             logger.debug("Synchronous HTTP client initialized")
         return self._sync_client
@@ -207,7 +224,7 @@ class KrakenRESTClient:
         """
         if self._async_client is None:
             self._async_client = httpx.AsyncClient(
-                headers={"User-Agent": self.USER_AGENT}, timeout=self.timeout
+                headers={"User-Agent": self.user}, timeout=self.timeout
             )
             logger.debug("Asynchronous HTTP client initialized")
         return self._async_client
@@ -258,12 +275,44 @@ class KrakenRESTClient:
         request signing time rather than order instantiation time to prevent
         stale timestamps in async/queued scenarios.
 
+        Design Rationale:
+            The deadline field is intentionally NOT computed during schema
+            instantiation because:
+
+            1. Async/Concurrent Scenarios: In async code, orders may be created
+               and then queued or delayed before submission. Computing the deadline
+               at instantiation time would result in stale timestamps by the time
+               the order actually reaches the matching engine.
+
+            2. Request Batching: When batching multiple requests, computing deadlines
+               at instantiation would cause earlier requests in the batch to have
+               shorter effective deadlines than later ones.
+
+            3. Retry Logic: If a request needs to be retried due to network issues,
+               a stale deadline from the original instantiation would be reused.
+
+            By computing the deadline at request signing time (the last possible
+            moment before submission), we ensure:
+            - Maximum time allowance for the order to reach the matching engine
+            - Consistent behavior across sync, async, and retry scenarios
+            - Protection against queue delays and network latency
+
+            The same principle applies to the nonce field, which is also computed
+            at signing time to ensure uniqueness and prevent replay attacks.
+
         Args:
             endpoint: The API endpoint name
             data: Request data dictionary
 
         Returns:
             Modified data dictionary with deadline added if applicable
+
+        Example:
+            >>> # Order created at T=0
+            >>> order = AddOrderRequest(ordertype="market", type="buy", volume=1, pair="XBTUSD")
+            >>> await asyncio.sleep(5)  # Queued/delayed for 5 seconds
+            >>> # Deadline computed at T=5 (signing time), not T=0 (instantiation time)
+            >>> response = await client.arequest(order)
         """
         try:
             match endpoint:
@@ -348,6 +397,11 @@ class KrakenRESTClient:
             if headers is None:
                 headers = kwargs.pop("headers", {})
             client = self._get_sync_client()
+
+            # Rate limiting
+            if self.enable_rate_limiting and self.rate_limiter:
+                self.rate_limiter.wait_if_needed()
+
             try:
                 if api_type.is_private():  # Private endpoint - requires auth and always uses POST
                     if not self.api_key or not self.api_secret:
@@ -358,6 +412,8 @@ class KrakenRESTClient:
                     data = self._prepare_order_data(endpoint, data)
                     nonce = str(get_nonce())
                     data["nonce"] = nonce
+                    if self.otp:
+                        data["otp"] = self.otp
                     signature = self._sign_request(url_path, data, nonce)
                     headers["API-Key"] = self.api_key
                     headers["API-Sign"] = signature
@@ -387,9 +443,12 @@ class KrakenRESTClient:
                 logger.error(f"Failed to parse JSON response: {e}")
                 raise KrakenPayloadError(f"Invalid JSON response: {e}", "", 0) from e
             if "error" in response_json and response_json["error"]:
-                error_msg = ", ".join(response_json["error"])
+                error_list = response_json["error"]
+                error_msg = ", ".join(error_list)
                 logger.error(f"API error for {endpoint}: {error_msg}")
-                raise KrakenAPIError(f"API error: {error_msg}")
+                # Use first error to determine exception type
+                exception_class = classify_error(error_list[0])
+                raise exception_class(f"API error: {error_msg}")
 
             logger.info(f"Successfully completed request to {endpoint}")
             return response_json
@@ -476,6 +535,10 @@ class KrakenRESTClient:
                 headers = kwargs.pop("headers", {})
             client = self._get_async_client()
 
+            # Rate limiting
+            if self.enable_rate_limiting and self.rate_limiter:
+                self.rate_limiter.wait_if_needed()
+
             # Send request
             try:
                 if api_type.is_private():  # Private endpoint - requires auth and always uses POST
@@ -487,6 +550,8 @@ class KrakenRESTClient:
                     data = self._prepare_order_data(endpoint, data)
                     nonce = str(get_nonce())
                     data["nonce"] = nonce
+                    if self.otp:
+                        data["otp"] = self.otp
                     signature = self._sign_request(url_path, data, nonce)
                     headers["API-Key"] = self.api_key
                     headers["API-Sign"] = signature
@@ -516,9 +581,12 @@ class KrakenRESTClient:
                 logger.error(f"Failed to parse JSON response: {e}")
                 raise KrakenPayloadError(f"Invalid JSON response: {e}", "", 0) from e
             if "error" in response_json and response_json["error"]:
-                error_msg = ", ".join(response_json["error"])
+                error_list = response_json["error"]
+                error_msg = ", ".join(error_list)
                 logger.error(f"API error for {endpoint}: {error_msg}")
-                raise KrakenAPIError(f"API error: {error_msg}")
+                # Use first error to determine exception type
+                exception_class = classify_error(error_list[0])
+                raise exception_class(f"API error: {error_msg}")
 
             logger.info(f"Successfully completed async request to {endpoint}")
             return response_json
