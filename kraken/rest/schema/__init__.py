@@ -1,4 +1,38 @@
-"""REST schema for requests and responses."""
+"""REST schema for requests and responses.
+
+This module provides the schema registry system that maps request classes to their
+corresponding API endpoints and response classes. The schema system enables type-safe,
+validated API interactions with automatic routing and response parsing.
+
+Architecture Overview
+--------------------
+The schema module uses a registry pattern to decouple request/response definitions
+from the HTTP transport layer:
+
+1. **Request Schemas**: All request classes extend `BaseRequestSchema` and define
+   the parameters accepted by an API endpoint using Pydantic models.
+
+2. **Response Schemas**: All response classes extend `BaseResponseWrapper[TSuccess]`
+   and parse the API's JSON response into typed Python objects.
+
+3. **Schema Registry**: The `SCHEMA_REGISTRY` dictionary maps request classes to
+   tuples of (endpoint_name, response_class), enabling automatic endpoint routing.
+
+4. **Endpoint Resolution**: The `get_endpoint_info()` function looks up a request
+   schema instance in the registry and returns the corresponding endpoint name and
+   response class.
+
+Special Cases
+------------
+Some endpoints have dynamic routing based on request parameters. For example,
+`CancelAllRequest` routes to different endpoints depending on whether a timeout
+is provided:
+
+- Without timeout: Routes to "CancelAll" (cancels all orders immediately)
+- With timeout: Routes to "CancelAllOrdersAfter" (sets up Dead Man's Switch)
+
+This logic is handled in `get_endpoint_info()` to keep routing centralized.
+"""
 
 from typing import Type
 

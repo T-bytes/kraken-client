@@ -1,3 +1,27 @@
+"""Channel interfaces for organizing REST API endpoints by domain.
+
+This module provides the channel system that groups related API endpoints into
+domain-specific interfaces. Channels offer convenience methods that wrap schema-based
+requests, making it easier to interact with the API while maintaining type safety.
+
+Architecture Overview
+--------------------
+The channel system uses a layered architecture to organize API functionality:
+
+1. **Channel Interfaces**: Domain-specific classes that provide high-level methods
+   for related API operations (e.g., AccountChannel for account data, TradingChannel
+   for order management).
+
+2. **Channel Enum**: The `KrakenChannel` enum maps channels to their implementation
+   classes, endpoint sets, and API path prefixes.
+
+3. **Base Interface**: All channel classes extend `ChannelInterface`, which provides
+   the `_request()` method for delegating to the client while maintaining type safety.
+
+4. **Client Integration**: The REST client lazy-loads channel interfaces as properties,
+   providing a clean API like `client.account.get_balance()`.
+"""
+
 from enum import Enum
 
 from .account import AccountChannel
