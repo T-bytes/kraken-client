@@ -14,8 +14,8 @@ from kraken.exceptions import (
     KrakenPayloadError,
     KrakenTimeoutError,
 )
+from kraken.rest.channels import KrakenChannel
 from kraken.rest.client import KrakenRESTClient
-from kraken.rest.endpoint import KrakenChannel
 
 
 class TestAPIType:

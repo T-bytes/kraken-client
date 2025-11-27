@@ -5,7 +5,7 @@ from kraken.rest.schema.market import *
 from .base import ChannelInterface
 
 
-class MarketChannel(ChannelInterface):
+class MarketsChannel(ChannelInterface):
     def __init__(self, client):
         super().__init__(client, "market", False)
 

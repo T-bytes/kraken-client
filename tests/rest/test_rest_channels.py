@@ -6,9 +6,9 @@ import pytest
 
 from kraken.rest.channels import (
     AccountChannel,
-    EarnChannel,
+    EarningChannel,
     FundingChannel,
-    MarketChannel,
+    MarketsChannel,
     TradingChannel,
 )
 from kraken.rest.client import KrakenRESTClient
@@ -131,7 +131,7 @@ class TestMarketChannelInitialization:
     def test_init_with_client(self):
         """Test MarketChannel initialization with a client"""
         mock_client = MagicMock(spec=KrakenRESTClient)
-        channel = MarketChannel(mock_client)
+        channel = MarketsChannel(mock_client)
 
         assert channel.client is mock_client
         assert channel.channel == "market"
@@ -140,7 +140,7 @@ class TestMarketChannelInitialization:
     def test_path_property(self):
         """Test that path property returns correct public path"""
         mock_client = MagicMock(spec=KrakenRESTClient)
-        channel = MarketChannel(mock_client)
+        channel = MarketsChannel(mock_client)
 
         assert channel.path == "/0/public/"
 
@@ -154,7 +154,7 @@ class TestMarketChannelServerTime:
         mock_response = MagicMock(spec=GetServerTimeResponse)
         mock_client.request.return_value = mock_response
 
-        channel = MarketChannel(mock_client)
+        channel = MarketsChannel(mock_client)
         result = channel.server_time()
 
         assert isinstance(result, tuple)
@@ -170,7 +170,7 @@ class TestMarketChannelServerTime:
         mock_response = MagicMock(spec=GetServerTimeResponse)
         mock_client.request.return_value = mock_response
 
-        channel = MarketChannel(mock_client)
+        channel = MarketsChannel(mock_client)
         request, _ = channel.server_time()
 
         mock_client.request.assert_called_once_with(request)
@@ -185,7 +185,7 @@ class TestMarketChannelSystemStatus:
         mock_response = MagicMock(spec=GetSystemStatusResponse)
         mock_client.request.return_value = mock_response
 
-        channel = MarketChannel(mock_client)
+        channel = MarketsChannel(mock_client)
         request, response = channel.system_status()
 
         assert isinstance(request, GetSystemStatusRequest)
@@ -198,7 +198,7 @@ class TestMarketChannelSystemStatus:
         mock_response = MagicMock(spec=GetSystemStatusResponse)
         mock_client.request.return_value = mock_response
 
-        channel = MarketChannel(mock_client)
+        channel = MarketsChannel(mock_client)
         request, _ = channel.system_status()
 
         mock_client.request.assert_called_once_with(request)
@@ -213,7 +213,7 @@ class TestMarketChannelAssetInfo:
         mock_response = MagicMock(spec=GetAssetInfoResponse)
         mock_client.request.return_value = mock_response
 
-        channel = MarketChannel(mock_client)
+        channel = MarketsChannel(mock_client)
 
         # asset parameter is required, so this should raise validation error
         with pytest.raises(Exception):  # ValidationError or ValueError
@@ -225,7 +225,7 @@ class TestMarketChannelAssetInfo:
         mock_response = MagicMock(spec=GetAssetInfoResponse)
         mock_client.request.return_value = mock_response
 
-        channel = MarketChannel(mock_client)
+        channel = MarketsChannel(mock_client)
         request, response = channel.asset_info(assets="XBT", aclass="currency")
 
         assert isinstance(request, GetAssetInfoRequest)
@@ -238,7 +238,7 @@ class TestMarketChannelAssetInfo:
         mock_response = MagicMock(spec=GetAssetInfoResponse)
         mock_client.request.return_value = mock_response
 
-        channel = MarketChannel(mock_client)
+        channel = MarketsChannel(mock_client)
         request, response = channel.asset_info(assets="XBT,ETH,USD", aclass="currency")
 
         assert isinstance(request, GetAssetInfoRequest)
@@ -251,7 +251,7 @@ class TestMarketChannelAssetInfo:
         mock_response = MagicMock(spec=GetAssetInfoResponse)
         mock_client.request.return_value = mock_response
 
-        channel = MarketChannel(mock_client)
+        channel = MarketsChannel(mock_client)
         request, response = channel.asset_info(assets=["XBT", "ETH", "USD"], aclass="currency")
 
         assert isinstance(request, GetAssetInfoRequest)
@@ -265,7 +265,7 @@ class TestMarketChannelAssetInfo:
         mock_response = MagicMock(spec=GetAssetInfoResponse)
         mock_client.request.return_value = mock_response
 
-        channel = MarketChannel(mock_client)
+        channel = MarketsChannel(mock_client)
         request, response = channel.asset_info(assets="XBT", aclass="currency")
 
         assert isinstance(request, GetAssetInfoRequest)
@@ -278,7 +278,7 @@ class TestMarketChannelAssetInfo:
         mock_response = MagicMock(spec=GetAssetInfoResponse)
         mock_client.request.return_value = mock_response
 
-        channel = MarketChannel(mock_client)
+        channel = MarketsChannel(mock_client)
         request, response = channel.asset_info(assets="XBT", aclass="tokenized_asset")
 
         assert isinstance(request, GetAssetInfoRequest)
@@ -291,7 +291,7 @@ class TestMarketChannelAssetInfo:
         mock_response = MagicMock(spec=GetAssetInfoResponse)
         mock_client.request.return_value = mock_response
 
-        channel = MarketChannel(mock_client)
+        channel = MarketsChannel(mock_client)
         request, response = channel.asset_info(assets=["XBT", "ETH"], aclass="currency")
 
         assert isinstance(request, GetAssetInfoRequest)
@@ -309,7 +309,7 @@ class TestMarketChannelAssetPairs:
         mock_response = MagicMock(spec=GetAssetPairsResponse)
         mock_client.request.return_value = mock_response
 
-        channel = MarketChannel(mock_client)
+        channel = MarketsChannel(mock_client)
         request, response = channel.asset_pairs()
 
         assert isinstance(request, GetAssetPairsRequest)
@@ -325,7 +325,7 @@ class TestMarketChannelAssetPairs:
         mock_response = MagicMock(spec=GetAssetPairsResponse)
         mock_client.request.return_value = mock_response
 
-        channel = MarketChannel(mock_client)
+        channel = MarketsChannel(mock_client)
         request, response = channel.asset_pairs(assets="XBTUSD")
 
         assert isinstance(request, GetAssetPairsRequest)
@@ -338,7 +338,7 @@ class TestMarketChannelAssetPairs:
         mock_response = MagicMock(spec=GetAssetPairsResponse)
         mock_client.request.return_value = mock_response
 
-        channel = MarketChannel(mock_client)
+        channel = MarketsChannel(mock_client)
         request, response = channel.asset_pairs(assets=["XBTUSD", "ETHUSD"])
 
         assert isinstance(request, GetAssetPairsRequest)
@@ -350,7 +350,7 @@ class TestMarketChannelAssetPairs:
         mock_response = MagicMock(spec=GetAssetPairsResponse)
         mock_client.request.return_value = mock_response
 
-        channel = MarketChannel(mock_client)
+        channel = MarketsChannel(mock_client)
         request, response = channel.asset_pairs(aclass="currency")
 
         assert isinstance(request, GetAssetPairsRequest)
@@ -363,7 +363,7 @@ class TestMarketChannelAssetPairs:
         mock_response = MagicMock(spec=GetAssetPairsResponse)
         mock_client.request.return_value = mock_response
 
-        channel = MarketChannel(mock_client)
+        channel = MarketsChannel(mock_client)
         request, response = channel.asset_pairs(aclass="tokenized_asset")
 
         assert isinstance(request, GetAssetPairsRequest)
@@ -376,7 +376,7 @@ class TestMarketChannelAssetPairs:
         mock_response = MagicMock(spec=GetAssetPairsResponse)
         mock_client.request.return_value = mock_response
 
-        channel = MarketChannel(mock_client)
+        channel = MarketsChannel(mock_client)
         request, response = channel.asset_pairs(info="info")
 
         assert isinstance(request, GetAssetPairsRequest)
@@ -389,7 +389,7 @@ class TestMarketChannelAssetPairs:
         mock_response = MagicMock(spec=GetAssetPairsResponse)
         mock_client.request.return_value = mock_response
 
-        channel = MarketChannel(mock_client)
+        channel = MarketsChannel(mock_client)
         request, response = channel.asset_pairs(info="leverage")
 
         assert isinstance(request, GetAssetPairsRequest)
@@ -402,7 +402,7 @@ class TestMarketChannelAssetPairs:
         mock_response = MagicMock(spec=GetAssetPairsResponse)
         mock_client.request.return_value = mock_response
 
-        channel = MarketChannel(mock_client)
+        channel = MarketsChannel(mock_client)
         request, response = channel.asset_pairs(info="fees")
 
         assert isinstance(request, GetAssetPairsRequest)
@@ -415,7 +415,7 @@ class TestMarketChannelAssetPairs:
         mock_response = MagicMock(spec=GetAssetPairsResponse)
         mock_client.request.return_value = mock_response
 
-        channel = MarketChannel(mock_client)
+        channel = MarketsChannel(mock_client)
         request, response = channel.asset_pairs(info="margin")
 
         assert isinstance(request, GetAssetPairsRequest)
@@ -428,7 +428,7 @@ class TestMarketChannelAssetPairs:
         mock_response = MagicMock(spec=GetAssetPairsResponse)
         mock_client.request.return_value = mock_response
 
-        channel = MarketChannel(mock_client)
+        channel = MarketsChannel(mock_client)
         request, response = channel.asset_pairs(country="US")
 
         assert isinstance(request, GetAssetPairsRequest)
@@ -441,7 +441,7 @@ class TestMarketChannelAssetPairs:
         mock_response = MagicMock(spec=GetAssetPairsResponse)
         mock_client.request.return_value = mock_response
 
-        channel = MarketChannel(mock_client)
+        channel = MarketsChannel(mock_client)
         request, response = channel.asset_pairs(
             assets=["XBTUSD", "ETHUSD"],
             aclass="currency",
@@ -465,7 +465,7 @@ class TestMarketChannelTicker:
         mock_response = MagicMock(spec=GetTickerInformationResponse)
         mock_client.request.return_value = mock_response
 
-        channel = MarketChannel(mock_client)
+        channel = MarketsChannel(mock_client)
         request, response = channel.ticker()
 
         assert isinstance(request, GetTickerInformationRequest)
@@ -479,7 +479,7 @@ class TestMarketChannelTicker:
         mock_response = MagicMock(spec=GetTickerInformationResponse)
         mock_client.request.return_value = mock_response
 
-        channel = MarketChannel(mock_client)
+        channel = MarketsChannel(mock_client)
         request, response = channel.ticker(pairs="XBTUSD")
 
         assert isinstance(request, GetTickerInformationRequest)
@@ -492,7 +492,7 @@ class TestMarketChannelTicker:
         mock_response = MagicMock(spec=GetTickerInformationResponse)
         mock_client.request.return_value = mock_response
 
-        channel = MarketChannel(mock_client)
+        channel = MarketsChannel(mock_client)
         request, response = channel.ticker(pairs="XBTUSD,ETHUSD")
 
         assert isinstance(request, GetTickerInformationRequest)
@@ -505,7 +505,7 @@ class TestMarketChannelTicker:
         mock_response = MagicMock(spec=GetTickerInformationResponse)
         mock_client.request.return_value = mock_response
 
-        channel = MarketChannel(mock_client)
+        channel = MarketsChannel(mock_client)
         request, response = channel.ticker(pairs=["XBTUSD", "ETHUSD"])
 
         assert isinstance(request, GetTickerInformationRequest)
@@ -517,7 +517,7 @@ class TestMarketChannelTicker:
         mock_response = MagicMock(spec=GetTickerInformationResponse)
         mock_client.request.return_value = mock_response
 
-        channel = MarketChannel(mock_client)
+        channel = MarketsChannel(mock_client)
         request, response = channel.ticker(aclass="tokenized_asset")
 
         assert isinstance(request, GetTickerInformationRequest)
@@ -530,7 +530,7 @@ class TestMarketChannelTicker:
         mock_response = MagicMock(spec=GetTickerInformationResponse)
         mock_client.request.return_value = mock_response
 
-        channel = MarketChannel(mock_client)
+        channel = MarketsChannel(mock_client)
         request, response = channel.ticker(aclass="forex")
 
         assert isinstance(request, GetTickerInformationRequest)
@@ -543,7 +543,7 @@ class TestMarketChannelTicker:
         mock_response = MagicMock(spec=GetTickerInformationResponse)
         mock_client.request.return_value = mock_response
 
-        channel = MarketChannel(mock_client)
+        channel = MarketsChannel(mock_client)
         request, response = channel.ticker(pairs=["XBTUSD"], aclass="forex")
 
         assert isinstance(request, GetTickerInformationRequest)
@@ -560,7 +560,7 @@ class TestMarketChannelOHLC:
         mock_response = MagicMock(spec=GetOHLCDataResponse)
         mock_client.request.return_value = mock_response
 
-        channel = MarketChannel(mock_client)
+        channel = MarketsChannel(mock_client)
         request, response = channel.ohlc(pair="XBTUSD")
 
         assert isinstance(request, GetOHLCDataRequest)
@@ -576,7 +576,7 @@ class TestMarketChannelOHLC:
         mock_response = MagicMock(spec=GetOHLCDataResponse)
         mock_client.request.return_value = mock_response
 
-        channel = MarketChannel(mock_client)
+        channel = MarketsChannel(mock_client)
         request, response = channel.ohlc(pair="XBTUSD", interval=1)
 
         assert isinstance(request, GetOHLCDataRequest)
@@ -589,7 +589,7 @@ class TestMarketChannelOHLC:
         mock_response = MagicMock(spec=GetOHLCDataResponse)
         mock_client.request.return_value = mock_response
 
-        channel = MarketChannel(mock_client)
+        channel = MarketsChannel(mock_client)
         request, response = channel.ohlc(pair="XBTUSD", interval=5)
 
         assert isinstance(request, GetOHLCDataRequest)
@@ -602,7 +602,7 @@ class TestMarketChannelOHLC:
         mock_response = MagicMock(spec=GetOHLCDataResponse)
         mock_client.request.return_value = mock_response
 
-        channel = MarketChannel(mock_client)
+        channel = MarketsChannel(mock_client)
         request, response = channel.ohlc(pair="XBTUSD", interval=15)
 
         assert isinstance(request, GetOHLCDataRequest)
@@ -615,7 +615,7 @@ class TestMarketChannelOHLC:
         mock_response = MagicMock(spec=GetOHLCDataResponse)
         mock_client.request.return_value = mock_response
 
-        channel = MarketChannel(mock_client)
+        channel = MarketsChannel(mock_client)
         request, response = channel.ohlc(pair="XBTUSD", interval=30)
 
         assert isinstance(request, GetOHLCDataRequest)
@@ -628,7 +628,7 @@ class TestMarketChannelOHLC:
         mock_response = MagicMock(spec=GetOHLCDataResponse)
         mock_client.request.return_value = mock_response
 
-        channel = MarketChannel(mock_client)
+        channel = MarketsChannel(mock_client)
         request, response = channel.ohlc(pair="XBTUSD", interval=60)
 
         assert isinstance(request, GetOHLCDataRequest)
@@ -641,7 +641,7 @@ class TestMarketChannelOHLC:
         mock_response = MagicMock(spec=GetOHLCDataResponse)
         mock_client.request.return_value = mock_response
 
-        channel = MarketChannel(mock_client)
+        channel = MarketsChannel(mock_client)
         request, response = channel.ohlc(pair="XBTUSD", interval=240)
 
         assert isinstance(request, GetOHLCDataRequest)
@@ -654,7 +654,7 @@ class TestMarketChannelOHLC:
         mock_response = MagicMock(spec=GetOHLCDataResponse)
         mock_client.request.return_value = mock_response
 
-        channel = MarketChannel(mock_client)
+        channel = MarketsChannel(mock_client)
         request, response = channel.ohlc(pair="XBTUSD", interval=1440)
 
         assert isinstance(request, GetOHLCDataRequest)
@@ -667,7 +667,7 @@ class TestMarketChannelOHLC:
         mock_response = MagicMock(spec=GetOHLCDataResponse)
         mock_client.request.return_value = mock_response
 
-        channel = MarketChannel(mock_client)
+        channel = MarketsChannel(mock_client)
         request, response = channel.ohlc(pair="XBTUSD", interval=10080)
 
         assert isinstance(request, GetOHLCDataRequest)
@@ -680,7 +680,7 @@ class TestMarketChannelOHLC:
         mock_response = MagicMock(spec=GetOHLCDataResponse)
         mock_client.request.return_value = mock_response
 
-        channel = MarketChannel(mock_client)
+        channel = MarketsChannel(mock_client)
         request, response = channel.ohlc(pair="XBTUSD", interval=21600)
 
         assert isinstance(request, GetOHLCDataRequest)
@@ -693,7 +693,7 @@ class TestMarketChannelOHLC:
         mock_response = MagicMock(spec=GetOHLCDataResponse)
         mock_client.request.return_value = mock_response
 
-        channel = MarketChannel(mock_client)
+        channel = MarketsChannel(mock_client)
         request, response = channel.ohlc(pair="XBTUSD", since=1609459200)
 
         assert isinstance(request, GetOHLCDataRequest)
@@ -706,7 +706,7 @@ class TestMarketChannelOHLC:
         mock_response = MagicMock(spec=GetOHLCDataResponse)
         mock_client.request.return_value = mock_response
 
-        channel = MarketChannel(mock_client)
+        channel = MarketsChannel(mock_client)
         request, response = channel.ohlc(pair="XBTUSD", aclass="tokenized_asset")
 
         assert isinstance(request, GetOHLCDataRequest)
@@ -719,7 +719,7 @@ class TestMarketChannelOHLC:
         mock_response = MagicMock(spec=GetOHLCDataResponse)
         mock_client.request.return_value = mock_response
 
-        channel = MarketChannel(mock_client)
+        channel = MarketsChannel(mock_client)
         request, response = channel.ohlc(
             pair="XBTUSD", interval=60, since=1609459200, aclass="tokenized_asset"
         )
@@ -741,7 +741,7 @@ class TestMarketChannelOrderBook:
         mock_response = MagicMock(spec=GetOrderBookResponse)
         mock_client.request.return_value = mock_response
 
-        channel = MarketChannel(mock_client)
+        channel = MarketsChannel(mock_client)
         request, response = channel.order_book(pair="XBTUSD")
 
         assert isinstance(request, GetOrderBookRequest)
@@ -756,7 +756,7 @@ class TestMarketChannelOrderBook:
         mock_response = MagicMock(spec=GetOrderBookResponse)
         mock_client.request.return_value = mock_response
 
-        channel = MarketChannel(mock_client)
+        channel = MarketsChannel(mock_client)
         request, response = channel.order_book(pair="XBTUSD", count=10)
 
         assert isinstance(request, GetOrderBookRequest)
@@ -769,7 +769,7 @@ class TestMarketChannelOrderBook:
         mock_response = MagicMock(spec=GetOrderBookResponse)
         mock_client.request.return_value = mock_response
 
-        channel = MarketChannel(mock_client)
+        channel = MarketsChannel(mock_client)
         request, response = channel.order_book(pair="XBTUSD", count=100)
 
         assert isinstance(request, GetOrderBookRequest)
@@ -782,7 +782,7 @@ class TestMarketChannelOrderBook:
         mock_response = MagicMock(spec=GetOrderBookResponse)
         mock_client.request.return_value = mock_response
 
-        channel = MarketChannel(mock_client)
+        channel = MarketsChannel(mock_client)
         request, response = channel.order_book(pair="XBTUSD", aclass="tokenized_asset")
 
         assert isinstance(request, GetOrderBookRequest)
@@ -795,7 +795,7 @@ class TestMarketChannelOrderBook:
         mock_response = MagicMock(spec=GetOrderBookResponse)
         mock_client.request.return_value = mock_response
 
-        channel = MarketChannel(mock_client)
+        channel = MarketsChannel(mock_client)
         request, response = channel.order_book(pair="XBTUSD", count=50, aclass="tokenized_asset")
 
         assert isinstance(request, GetOrderBookRequest)
@@ -814,7 +814,7 @@ class TestMarketChannelRecentTrades:
         mock_response = MagicMock(spec=GetRecentTradesResponse)
         mock_client.request.return_value = mock_response
 
-        channel = MarketChannel(mock_client)
+        channel = MarketsChannel(mock_client)
         request, response = channel.recent_trades(pair="XBTUSD")
 
         assert isinstance(request, GetRecentTradesRequest)
@@ -830,7 +830,7 @@ class TestMarketChannelRecentTrades:
         mock_response = MagicMock(spec=GetRecentTradesResponse)
         mock_client.request.return_value = mock_response
 
-        channel = MarketChannel(mock_client)
+        channel = MarketsChannel(mock_client)
         request, response = channel.recent_trades(pair="XBTUSD", since="1609459200")
 
         assert isinstance(request, GetRecentTradesRequest)
@@ -843,7 +843,7 @@ class TestMarketChannelRecentTrades:
         mock_response = MagicMock(spec=GetRecentTradesResponse)
         mock_client.request.return_value = mock_response
 
-        channel = MarketChannel(mock_client)
+        channel = MarketsChannel(mock_client)
         request, response = channel.recent_trades(pair="XBTUSD", count=100)
 
         assert isinstance(request, GetRecentTradesRequest)
@@ -856,7 +856,7 @@ class TestMarketChannelRecentTrades:
         mock_response = MagicMock(spec=GetRecentTradesResponse)
         mock_client.request.return_value = mock_response
 
-        channel = MarketChannel(mock_client)
+        channel = MarketsChannel(mock_client)
         request, response = channel.recent_trades(pair="XBTUSD", aclass="tokenized_asset")
 
         assert isinstance(request, GetRecentTradesRequest)
@@ -869,7 +869,7 @@ class TestMarketChannelRecentTrades:
         mock_response = MagicMock(spec=GetRecentTradesResponse)
         mock_client.request.return_value = mock_response
 
-        channel = MarketChannel(mock_client)
+        channel = MarketsChannel(mock_client)
         request, response = channel.recent_trades(
             pair="XBTUSD", since="1609459200", count=100, aclass="tokenized_asset"
         )
@@ -891,7 +891,7 @@ class TestMarketChannelRecentSpreads:
         mock_response = MagicMock(spec=GetRecentSpreadsResponse)
         mock_client.request.return_value = mock_response
 
-        channel = MarketChannel(mock_client)
+        channel = MarketsChannel(mock_client)
         request, response = channel.recent_spreads(pair="XBTUSD")
 
         assert isinstance(request, GetRecentSpreadsRequest)
@@ -906,7 +906,7 @@ class TestMarketChannelRecentSpreads:
         mock_response = MagicMock(spec=GetRecentSpreadsResponse)
         mock_client.request.return_value = mock_response
 
-        channel = MarketChannel(mock_client)
+        channel = MarketsChannel(mock_client)
         request, response = channel.recent_spreads(pair="XBTUSD", since="1609459200")
 
         assert isinstance(request, GetRecentSpreadsRequest)
@@ -920,7 +920,7 @@ class TestMarketChannelRecentSpreads:
         mock_response = MagicMock(spec=GetRecentSpreadsResponse)
         mock_client.request.return_value = mock_response
 
-        channel = MarketChannel(mock_client)
+        channel = MarketsChannel(mock_client)
         request, response = channel.recent_spreads(pair="XBTUSD", aclass="tokenized_asset")
 
         assert isinstance(request, GetRecentSpreadsRequest)
@@ -933,7 +933,7 @@ class TestMarketChannelRecentSpreads:
         mock_response = MagicMock(spec=GetRecentSpreadsResponse)
         mock_client.request.return_value = mock_response
 
-        channel = MarketChannel(mock_client)
+        channel = MarketsChannel(mock_client)
         request, response = channel.recent_spreads(
             pair="XBTUSD", since="1609459200", aclass="tokenized_asset"
         )
@@ -955,7 +955,7 @@ class TestMarketChannelPreTradeData:
         mock_response = MagicMock(spec=GetPreTradeDataResponse)
         mock_client.request.return_value = mock_response
 
-        channel = MarketChannel(mock_client)
+        channel = MarketsChannel(mock_client)
         request, response = channel.pre_trade_data(symbol="BTC/USD")
 
         assert isinstance(request, GetPreTradeDataRequest)
@@ -968,7 +968,7 @@ class TestMarketChannelPreTradeData:
         mock_response = MagicMock(spec=GetPreTradeDataResponse)
         mock_client.request.return_value = mock_response
 
-        channel = MarketChannel(mock_client)
+        channel = MarketsChannel(mock_client)
         request, response = channel.pre_trade_data(symbol="ETH/USD")
 
         assert isinstance(request, GetPreTradeDataRequest)
@@ -981,7 +981,7 @@ class TestMarketChannelPreTradeData:
         mock_response = MagicMock(spec=GetPreTradeDataResponse)
         mock_client.request.return_value = mock_response
 
-        channel = MarketChannel(mock_client)
+        channel = MarketsChannel(mock_client)
         result = channel.pre_trade_data(symbol="BTC/USD")
 
         assert isinstance(result, tuple)
@@ -996,7 +996,7 @@ class TestMarketChannelPreTradeData:
         mock_response = MagicMock(spec=GetPreTradeDataResponse)
         mock_client.request.return_value = mock_response
 
-        channel = MarketChannel(mock_client)
+        channel = MarketsChannel(mock_client)
         request, _ = channel.pre_trade_data(symbol="BTC/USD")
 
         mock_client.request.assert_called_once_with(request)
@@ -1011,7 +1011,7 @@ class TestMarketChannelPostTradeData:
         mock_response = MagicMock(spec=GetPostTradeDataResponse)
         mock_client.request.return_value = mock_response
 
-        channel = MarketChannel(mock_client)
+        channel = MarketsChannel(mock_client)
         request, response = channel.post_trade_data()
 
         assert isinstance(request, GetPostTradeDataRequest)
@@ -1027,7 +1027,7 @@ class TestMarketChannelPostTradeData:
         mock_response = MagicMock(spec=GetPostTradeDataResponse)
         mock_client.request.return_value = mock_response
 
-        channel = MarketChannel(mock_client)
+        channel = MarketsChannel(mock_client)
         request, response = channel.post_trade_data(symbol="BTC/USD")
 
         assert isinstance(request, GetPostTradeDataRequest)
@@ -1040,7 +1040,7 @@ class TestMarketChannelPostTradeData:
         mock_response = MagicMock(spec=GetPostTradeDataResponse)
         mock_client.request.return_value = mock_response
 
-        channel = MarketChannel(mock_client)
+        channel = MarketsChannel(mock_client)
         request, response = channel.post_trade_data(
             symbol="BTC/USD", from_ts="2024-05-30T12:34:56.1234567892Z"
         )
@@ -1055,7 +1055,7 @@ class TestMarketChannelPostTradeData:
         mock_response = MagicMock(spec=GetPostTradeDataResponse)
         mock_client.request.return_value = mock_response
 
-        channel = MarketChannel(mock_client)
+        channel = MarketsChannel(mock_client)
         request, response = channel.post_trade_data(
             symbol="BTC/USD", to_ts="2024-05-30T12:34:56.1234567892Z"
         )
@@ -1070,7 +1070,7 @@ class TestMarketChannelPostTradeData:
         mock_response = MagicMock(spec=GetPostTradeDataResponse)
         mock_client.request.return_value = mock_response
 
-        channel = MarketChannel(mock_client)
+        channel = MarketsChannel(mock_client)
         request, response = channel.post_trade_data(symbol="BTC/USD", count=100)
 
         assert isinstance(request, GetPostTradeDataRequest)
@@ -1083,7 +1083,7 @@ class TestMarketChannelPostTradeData:
         mock_response = MagicMock(spec=GetPostTradeDataResponse)
         mock_client.request.return_value = mock_response
 
-        channel = MarketChannel(mock_client)
+        channel = MarketsChannel(mock_client)
         request, response = channel.post_trade_data(symbol="ETH/USD", count=1000)
 
         assert isinstance(request, GetPostTradeDataRequest)
@@ -1096,7 +1096,7 @@ class TestMarketChannelPostTradeData:
         mock_response = MagicMock(spec=GetPostTradeDataResponse)
         mock_client.request.return_value = mock_response
 
-        channel = MarketChannel(mock_client)
+        channel = MarketsChannel(mock_client)
         request, response = channel.post_trade_data(
             symbol="BTC/USD",
             from_ts="2024-05-30T12:00:00Z",
@@ -1117,7 +1117,7 @@ class TestMarketChannelPostTradeData:
         mock_response = MagicMock(spec=GetPostTradeDataResponse)
         mock_client.request.return_value = mock_response
 
-        channel = MarketChannel(mock_client)
+        channel = MarketsChannel(mock_client)
         result = channel.post_trade_data()
 
         assert isinstance(result, tuple)
@@ -1132,7 +1132,7 @@ class TestMarketChannelPostTradeData:
         mock_response = MagicMock(spec=GetPostTradeDataResponse)
         mock_client.request.return_value = mock_response
 
-        channel = MarketChannel(mock_client)
+        channel = MarketsChannel(mock_client)
         request, _ = channel.post_trade_data(symbol="BTC/USD")
 
         mock_client.request.assert_called_once_with(request)
@@ -2940,7 +2940,7 @@ class TestEarnChannelInitialization:
     def test_init_with_client(self):
         """Test EarnChannel initialization with a client"""
         mock_client = MagicMock(spec=KrakenRESTClient)
-        channel = EarnChannel(mock_client)
+        channel = EarningChannel(mock_client)
 
         assert channel.client is mock_client
         assert channel.channel == "earn"
@@ -2949,7 +2949,7 @@ class TestEarnChannelInitialization:
     def test_path_property(self):
         """Test that path property returns correct private path"""
         mock_client = MagicMock(spec=KrakenRESTClient)
-        channel = EarnChannel(mock_client)
+        channel = EarningChannel(mock_client)
 
         assert channel.path == "/0/private/"
 
@@ -2963,7 +2963,7 @@ class TestEarnChannelListStrategies:
         mock_response = MagicMock(spec=ListEarnStrategiesResponse)
         mock_client.request.return_value = mock_response
 
-        channel = EarnChannel(mock_client)
+        channel = EarningChannel(mock_client)
         request, response = channel.list_strategies()
 
         assert isinstance(request, ListEarnStrategiesRequest)
@@ -2980,7 +2980,7 @@ class TestEarnChannelListStrategies:
         mock_response = MagicMock(spec=ListEarnStrategiesResponse)
         mock_client.request.return_value = mock_response
 
-        channel = EarnChannel(mock_client)
+        channel = EarningChannel(mock_client)
         request, response = channel.list_strategies(asset="XBT")
 
         assert isinstance(request, ListEarnStrategiesRequest)
@@ -2993,7 +2993,7 @@ class TestEarnChannelListStrategies:
         mock_response = MagicMock(spec=ListEarnStrategiesResponse)
         mock_client.request.return_value = mock_response
 
-        channel = EarnChannel(mock_client)
+        channel = EarningChannel(mock_client)
         request, response = channel.list_strategies(ascending=True)
 
         assert isinstance(request, ListEarnStrategiesRequest)
@@ -3006,7 +3006,7 @@ class TestEarnChannelListStrategies:
         mock_response = MagicMock(spec=ListEarnStrategiesResponse)
         mock_client.request.return_value = mock_response
 
-        channel = EarnChannel(mock_client)
+        channel = EarningChannel(mock_client)
         request, response = channel.list_strategies(limit=10)
 
         assert isinstance(request, ListEarnStrategiesRequest)
@@ -3019,7 +3019,7 @@ class TestEarnChannelListStrategies:
         mock_response = MagicMock(spec=ListEarnStrategiesResponse)
         mock_client.request.return_value = mock_response
 
-        channel = EarnChannel(mock_client)
+        channel = EarningChannel(mock_client)
         request, response = channel.list_strategies(lock_type=["flex", "bonded"])
 
         assert isinstance(request, ListEarnStrategiesRequest)
@@ -3032,7 +3032,7 @@ class TestEarnChannelListStrategies:
         mock_response = MagicMock(spec=ListEarnStrategiesResponse)
         mock_client.request.return_value = mock_response
 
-        channel = EarnChannel(mock_client)
+        channel = EarningChannel(mock_client)
         request, response = channel.list_strategies(cursor="next_page_cursor")
 
         assert isinstance(request, ListEarnStrategiesRequest)
@@ -3045,7 +3045,7 @@ class TestEarnChannelListStrategies:
         mock_response = MagicMock(spec=ListEarnStrategiesResponse)
         mock_client.request.return_value = mock_response
 
-        channel = EarnChannel(mock_client)
+        channel = EarningChannel(mock_client)
         request, response = channel.list_strategies(cursor=True)
 
         assert isinstance(request, ListEarnStrategiesRequest)
@@ -3058,7 +3058,7 @@ class TestEarnChannelListStrategies:
         mock_response = MagicMock(spec=ListEarnStrategiesResponse)
         mock_client.request.return_value = mock_response
 
-        channel = EarnChannel(mock_client)
+        channel = EarningChannel(mock_client)
         request, response = channel.list_strategies(
             ascending=True,
             asset="ETH",
@@ -3081,7 +3081,7 @@ class TestEarnChannelListStrategies:
         mock_response = MagicMock(spec=ListEarnStrategiesResponse)
         mock_client.request.return_value = mock_response
 
-        channel = EarnChannel(mock_client)
+        channel = EarningChannel(mock_client)
         result = channel.list_strategies()
 
         assert isinstance(result, tuple)
@@ -3100,7 +3100,7 @@ class TestEarnChannelListAllocations:
         mock_response = MagicMock(spec=ListEarnAllocationsResponse)
         mock_client.request.return_value = mock_response
 
-        channel = EarnChannel(mock_client)
+        channel = EarningChannel(mock_client)
         request, response = channel.list_allocations()
 
         assert isinstance(request, ListEarnAllocationsRequest)
@@ -3117,7 +3117,7 @@ class TestEarnChannelListAllocations:
         mock_response = MagicMock(spec=ListEarnAllocationsResponse)
         mock_client.request.return_value = mock_response
 
-        channel = EarnChannel(mock_client)
+        channel = EarningChannel(mock_client)
         request, response = channel.list_allocations(asset="XBT")
 
         assert isinstance(request, ListEarnAllocationsRequest)
@@ -3130,7 +3130,7 @@ class TestEarnChannelListAllocations:
         mock_response = MagicMock(spec=ListEarnAllocationsResponse)
         mock_client.request.return_value = mock_response
 
-        channel = EarnChannel(mock_client)
+        channel = EarningChannel(mock_client)
         request, response = channel.list_allocations(converted_asset="USD")
 
         assert isinstance(request, ListEarnAllocationsRequest)
@@ -3143,7 +3143,7 @@ class TestEarnChannelListAllocations:
         mock_response = MagicMock(spec=ListEarnAllocationsResponse)
         mock_client.request.return_value = mock_response
 
-        channel = EarnChannel(mock_client)
+        channel = EarningChannel(mock_client)
         request, response = channel.list_allocations(hide_zero_allocations=True)
 
         assert isinstance(request, ListEarnAllocationsRequest)
@@ -3156,7 +3156,7 @@ class TestEarnChannelListAllocations:
         mock_response = MagicMock(spec=ListEarnAllocationsResponse)
         mock_client.request.return_value = mock_response
 
-        channel = EarnChannel(mock_client)
+        channel = EarningChannel(mock_client)
         request, response = channel.list_allocations(ascending=False)
 
         assert isinstance(request, ListEarnAllocationsRequest)
@@ -3169,7 +3169,7 @@ class TestEarnChannelListAllocations:
         mock_response = MagicMock(spec=ListEarnAllocationsResponse)
         mock_client.request.return_value = mock_response
 
-        channel = EarnChannel(mock_client)
+        channel = EarningChannel(mock_client)
         request, response = channel.list_allocations(cursor="cursor_value")
 
         assert isinstance(request, ListEarnAllocationsRequest)
@@ -3182,7 +3182,7 @@ class TestEarnChannelListAllocations:
         mock_response = MagicMock(spec=ListEarnAllocationsResponse)
         mock_client.request.return_value = mock_response
 
-        channel = EarnChannel(mock_client)
+        channel = EarningChannel(mock_client)
         request, response = channel.list_allocations(
             ascending=True,
             asset="ETH",
@@ -3205,7 +3205,7 @@ class TestEarnChannelListAllocations:
         mock_response = MagicMock(spec=ListEarnAllocationsResponse)
         mock_client.request.return_value = mock_response
 
-        channel = EarnChannel(mock_client)
+        channel = EarningChannel(mock_client)
         result = channel.list_allocations()
 
         assert isinstance(result, tuple)
@@ -3224,7 +3224,7 @@ class TestEarnChannelAllocateFunds:
         mock_response = MagicMock(spec=AllocateEarnFundsResponse)
         mock_client.request.return_value = mock_response
 
-        channel = EarnChannel(mock_client)
+        channel = EarningChannel(mock_client)
         request, response = channel.allocate_funds(
             amount="4.3", strategy_id="ESRFUO3-Q62XD-WIOIL7"
         )
@@ -3240,7 +3240,7 @@ class TestEarnChannelAllocateFunds:
         mock_response = MagicMock(spec=AllocateEarnFundsResponse)
         mock_client.request.return_value = mock_response
 
-        channel = EarnChannel(mock_client)
+        channel = EarningChannel(mock_client)
         request, response = channel.allocate_funds(amount=10.5, strategy_id="ESRFUO3-Q62XD-WIOIL7")
 
         assert isinstance(request, AllocateEarnFundsRequest)
@@ -3254,7 +3254,7 @@ class TestEarnChannelAllocateFunds:
         mock_response = MagicMock(spec=AllocateEarnFundsResponse)
         mock_client.request.return_value = mock_response
 
-        channel = EarnChannel(mock_client)
+        channel = EarningChannel(mock_client)
         request, response = channel.allocate_funds(amount=5, strategy_id="ESRFUO3-Q62XD-WIOIL7")
 
         assert isinstance(request, AllocateEarnFundsRequest)
@@ -3268,7 +3268,7 @@ class TestEarnChannelAllocateFunds:
         mock_response = MagicMock(spec=AllocateEarnFundsResponse)
         mock_client.request.return_value = mock_response
 
-        channel = EarnChannel(mock_client)
+        channel = EarningChannel(mock_client)
         result = channel.allocate_funds(amount="1.0", strategy_id="STRAT123")
 
         assert isinstance(result, tuple)
@@ -3283,7 +3283,7 @@ class TestEarnChannelAllocateFunds:
         mock_response = MagicMock(spec=AllocateEarnFundsResponse)
         mock_client.request.return_value = mock_response
 
-        channel = EarnChannel(mock_client)
+        channel = EarningChannel(mock_client)
         request, _ = channel.allocate_funds(amount="2.0", strategy_id="STRAT456")
 
         mock_client.request.assert_called_once_with(request)
@@ -3298,7 +3298,7 @@ class TestEarnChannelDeallocateFunds:
         mock_response = MagicMock(spec=DeallocateEarnFundsResponse)
         mock_client.request.return_value = mock_response
 
-        channel = EarnChannel(mock_client)
+        channel = EarningChannel(mock_client)
         request, response = channel.deallocate_funds(
             amount="4.3", strategy_id="ESRFUO3-Q62XD-WIOIL7"
         )
@@ -3314,7 +3314,7 @@ class TestEarnChannelDeallocateFunds:
         mock_response = MagicMock(spec=DeallocateEarnFundsResponse)
         mock_client.request.return_value = mock_response
 
-        channel = EarnChannel(mock_client)
+        channel = EarningChannel(mock_client)
         request, response = channel.deallocate_funds(
             amount=7.8, strategy_id="ESRFUO3-Q62XD-WIOIL7"
         )
@@ -3330,7 +3330,7 @@ class TestEarnChannelDeallocateFunds:
         mock_response = MagicMock(spec=DeallocateEarnFundsResponse)
         mock_client.request.return_value = mock_response
 
-        channel = EarnChannel(mock_client)
+        channel = EarningChannel(mock_client)
         request, response = channel.deallocate_funds(amount=3, strategy_id="ESRFUO3-Q62XD-WIOIL7")
 
         assert isinstance(request, DeallocateEarnFundsRequest)
@@ -3344,7 +3344,7 @@ class TestEarnChannelDeallocateFunds:
         mock_response = MagicMock(spec=DeallocateEarnFundsResponse)
         mock_client.request.return_value = mock_response
 
-        channel = EarnChannel(mock_client)
+        channel = EarningChannel(mock_client)
         result = channel.deallocate_funds(amount="1.0", strategy_id="STRAT123")
 
         assert isinstance(result, tuple)
@@ -3359,7 +3359,7 @@ class TestEarnChannelDeallocateFunds:
         mock_response = MagicMock(spec=DeallocateEarnFundsResponse)
         mock_client.request.return_value = mock_response
 
-        channel = EarnChannel(mock_client)
+        channel = EarningChannel(mock_client)
         request, _ = channel.deallocate_funds(amount="2.0", strategy_id="STRAT456")
 
         mock_client.request.assert_called_once_with(request)
@@ -3374,7 +3374,7 @@ class TestEarnChannelGetAllocationStatus:
         mock_response = MagicMock(spec=GetAllocationStatusResponse)
         mock_client.request.return_value = mock_response
 
-        channel = EarnChannel(mock_client)
+        channel = EarningChannel(mock_client)
         request, response = channel.get_allocation_status(strategy_id="ESRFUO3-Q62XD-WIOIL7")
 
         assert isinstance(request, GetAllocationStatusRequest)
@@ -3387,7 +3387,7 @@ class TestEarnChannelGetAllocationStatus:
         mock_response = MagicMock(spec=GetAllocationStatusResponse)
         mock_client.request.return_value = mock_response
 
-        channel = EarnChannel(mock_client)
+        channel = EarningChannel(mock_client)
         result = channel.get_allocation_status(strategy_id="STRAT123")
 
         assert isinstance(result, tuple)
@@ -3402,7 +3402,7 @@ class TestEarnChannelGetAllocationStatus:
         mock_response = MagicMock(spec=GetAllocationStatusResponse)
         mock_client.request.return_value = mock_response
 
-        channel = EarnChannel(mock_client)
+        channel = EarningChannel(mock_client)
         request, _ = channel.get_allocation_status(strategy_id="STRAT456")
 
         mock_client.request.assert_called_once_with(request)
@@ -3417,7 +3417,7 @@ class TestEarnChannelGetDeallocationStatus:
         mock_response = MagicMock(spec=GetDeallocationStatusResponse)
         mock_client.request.return_value = mock_response
 
-        channel = EarnChannel(mock_client)
+        channel = EarningChannel(mock_client)
         request, response = channel.get_deallocation_status(strategy_id="ESRFUO3-Q62XD-WIOIL7")
 
         assert isinstance(request, GetDeallocationStatusRequest)
@@ -3430,7 +3430,7 @@ class TestEarnChannelGetDeallocationStatus:
         mock_response = MagicMock(spec=GetDeallocationStatusResponse)
         mock_client.request.return_value = mock_response
 
-        channel = EarnChannel(mock_client)
+        channel = EarningChannel(mock_client)
         result = channel.get_deallocation_status(strategy_id="STRAT123")
 
         assert isinstance(result, tuple)
@@ -3445,7 +3445,7 @@ class TestEarnChannelGetDeallocationStatus:
         mock_response = MagicMock(spec=GetDeallocationStatusResponse)
         mock_client.request.return_value = mock_response
 
-        channel = EarnChannel(mock_client)
+        channel = EarningChannel(mock_client)
         request, _ = channel.get_deallocation_status(strategy_id="STRAT456")
 
         mock_client.request.assert_called_once_with(request)

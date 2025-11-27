@@ -1,13 +1,11 @@
 from abc import ABC
-from enum import StrEnum
 from typing import Tuple, TypeVar
 
-from kraken.rest.client import KrakenRESTClient
 from kraken.rest.schema.base import BaseRequestSchema, BaseResponseWrapper
 
 TRequest = TypeVar("TRequest", bound=BaseRequestSchema)
 TResponse = TypeVar("TResponse", bound=BaseResponseWrapper)
-TClient = TypeVar("TClient", bound=KrakenRESTClient)
+TClient = TypeVar("TClient")
 
 
 class ChannelInterface(ABC):

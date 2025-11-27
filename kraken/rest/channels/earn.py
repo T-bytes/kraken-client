@@ -7,7 +7,7 @@ from kraken.rest.schema.earn import *
 from .base import ChannelInterface
 
 
-class EarnChannel(ChannelInterface):
+class EarningChannel(ChannelInterface):
     """Channel for Earn endpoints.
 
     Provides access to staking and earning operations.

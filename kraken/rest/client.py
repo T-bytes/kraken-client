@@ -63,7 +63,7 @@ from kraken.exceptions import (
     KrakenPayloadError,
     KrakenTimeoutError,
 )
-from kraken.rest.endpoint import KrakenChannel
+from kraken.rest.channels import KrakenChannel
 from kraken.rest.schema import *
 from kraken.rest.schema import get_endpoint_info
 from kraken.utilities import get_nonce
@@ -125,16 +125,16 @@ class KrakenRESTClient:
     USER_AGENT = "Kraken REST API Client/2.0"
 
     def __init__(
-        self, api_key: Optional[str] = None, api_secret: Optional[str] = None, timeout: int = 30
+        self, api_key: str | None = None, api_secret: str | None = None, timeout: int = 30
     ):
         """Initialize the Kraken REST client.
 
         Args:
             api_key: API key for authentication. If not provided, reads from
-                KRAKEN_API_KEY environment variable
+                KRAKEN_API_KEY environment variable.
             api_secret: API secret for authentication. If not provided, reads from
-                KRAKEN_API_SECRET environment variable
-            timeout: Request timeout in seconds. Default is 30
+                KRAKEN_API_SECRET environment variable.
+            timeout: Request timeout in seconds. Default is 30.
 
         Raises:
             ValueError: If API secret format is invalid
@@ -171,7 +171,6 @@ class KrakenRESTClient:
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         """Asynchronous context manager exit."""
         await self.aclose()
-        return False
 
     def close(self):
         """Close the synchronous HTTP client and cleanup resources."""
@@ -290,7 +289,9 @@ class KrakenRESTClient:
         """Make a string-based request (returns dict)."""
         ...
 
-    def request(self, endpoint_or_schema, headers=None, **kwargs) -> Dict[str, Any] | TResponse:
+    def request(
+        self, endpoint_or_schema: str | TRequest, headers: Dict[str, str] | None = None, **kwargs
+    ) -> Dict[str, Any] | TResponse:
         """Make a synchronous request to the Kraken API.
 
         This method supports two calling patterns:
@@ -328,27 +329,18 @@ class KrakenRESTClient:
             >>> client.request("Time")
             {'error': [], 'result': {'unixtime': 1234567890, 'rfc1123': '...'}}
         """
-        # Detect if this is a schema-based or string-based request
+        # Create request
         if isinstance(endpoint_or_schema, BaseRequestSchema):
-            # Schema-based request
             schema = endpoint_or_schema
             endpoint, response_class = get_endpoint_info(schema)
-
-            # Serialize schema to dict
             data = schema.to_api_dict()
-
-            # Make the request using the string-based logic, but catch API errors
-            # to wrap them in the response object instead of raising
             raw_response = {}
             try:
                 raw_response = self.request(endpoint, data=data, headers=headers or {})
             except Exception as e:
                 raw_response["error"] = [str(e)]
-
-            # Parse and return typed response
             return response_class.from_response(raw_response)
         else:
-            # String-based request (legacy path)
             endpoint = endpoint_or_schema
             api_type = self._get_api_type(endpoint)
             url_path = f"{api_type.path}{endpoint}"
@@ -356,8 +348,6 @@ class KrakenRESTClient:
             if headers is None:
                 headers = kwargs.pop("headers", {})
             client = self._get_sync_client()
-
-            # Send request
             try:
                 if api_type.is_private():  # Private endpoint - requires auth and always uses POST
                     if not self.api_key or not self.api_secret:
