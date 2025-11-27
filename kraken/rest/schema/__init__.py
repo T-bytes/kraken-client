@@ -4,6 +4,7 @@ from typing import Type
 
 from .account import *
 from .base import BaseRequestSchema, BaseResponseWrapper
+from .earn import *
 from .funding import *
 from .market import *
 from .trading import *
@@ -62,6 +63,13 @@ SCHEMA_REGISTRY: dict[Type[BaseRequestSchema], tuple[str, Type[BaseResponseWrapp
     GetWithdrawalStatusRequest: ("WithdrawStatus", GetWithdrawalStatusResponse),
     RequestWithdrawalCancellationRequest: ("WithdrawCancel", WithdrawCancelResponse),
     RequestWalletTransferRequest: ("WalletTransfer", RequestWalletTransferResponse),
+    # Earn endpoints
+    ListEarnStrategiesRequest: ("Earn/Strategies", ListEarnStrategiesResponse),
+    ListEarnAllocationsRequest: ("Earn/Allocations", ListEarnAllocationsResponse),
+    AllocateEarnFundsRequest: ("Earn/Allocate", AllocateEarnFundsResponse),
+    DeallocateEarnFundsRequest: ("Earn/Deallocate", DeallocateEarnFundsResponse),
+    GetAllocationStatusRequest: ("Earn/AllocateStatus", GetAllocationStatusResponse),
+    GetDeallocationStatusRequest: ("Earn/DeallocateStatus", GetDeallocationStatusResponse),
 }
 
 

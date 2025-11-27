@@ -4,7 +4,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from kraken.rest.channels import AccountChannel, FundingChannel, MarketChannel, TradingChannel
+from kraken.rest.channels import (
+    AccountChannel,
+    EarnChannel,
+    FundingChannel,
+    MarketChannel,
+    TradingChannel,
+)
 from kraken.rest.client import KrakenRESTClient
 from kraken.rest.schema.account import (
     AccountTransferRequest,
@@ -45,6 +51,20 @@ from kraken.rest.schema.account import (
     RequestExportResponse,
     RetrieveExportRequest,
     RetrieveExportResponse,
+)
+from kraken.rest.schema.earn import (
+    AllocateEarnFundsRequest,
+    AllocateEarnFundsResponse,
+    DeallocateEarnFundsRequest,
+    DeallocateEarnFundsResponse,
+    GetAllocationStatusRequest,
+    GetAllocationStatusResponse,
+    GetDeallocationStatusRequest,
+    GetDeallocationStatusResponse,
+    ListEarnAllocationsRequest,
+    ListEarnAllocationsResponse,
+    ListEarnStrategiesRequest,
+    ListEarnStrategiesResponse,
 )
 from kraken.rest.schema.funding import (
     GetDepositAddressesRequest,
@@ -2907,3 +2927,525 @@ class TestFundingChannelRequestWalletTransfer:
         request, response = result
         assert isinstance(request, RequestWalletTransferRequest)
         assert response is mock_response
+
+
+# ============================================================================
+# EarnChannel Tests
+# ============================================================================
+
+
+class TestEarnChannelInitialization:
+    """Tests for EarnChannel initialization"""
+
+    def test_init_with_client(self):
+        """Test EarnChannel initialization with a client"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        channel = EarnChannel(mock_client)
+
+        assert channel.client is mock_client
+        assert channel.channel == "earn"
+        assert channel.private is True
+
+    def test_path_property(self):
+        """Test that path property returns correct private path"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        channel = EarnChannel(mock_client)
+
+        assert channel.path == "/0/private/"
+
+
+class TestEarnChannelListStrategies:
+    """Tests for list_strategies method"""
+
+    def test_list_strategies_no_parameters(self):
+        """Test list_strategies with no parameters"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=ListEarnStrategiesResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = EarnChannel(mock_client)
+        request, response = channel.list_strategies()
+
+        assert isinstance(request, ListEarnStrategiesRequest)
+        assert request.ascending is None
+        assert request.asset is None
+        assert request.cursor is None
+        assert request.limit is None
+        assert request.lock_type is None
+        assert response is mock_response
+
+    def test_list_strategies_with_asset(self):
+        """Test list_strategies with asset parameter"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=ListEarnStrategiesResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = EarnChannel(mock_client)
+        request, response = channel.list_strategies(asset="XBT")
+
+        assert isinstance(request, ListEarnStrategiesRequest)
+        assert request.asset == "XBT"
+        assert response is mock_response
+
+    def test_list_strategies_with_ascending(self):
+        """Test list_strategies with ascending parameter"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=ListEarnStrategiesResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = EarnChannel(mock_client)
+        request, response = channel.list_strategies(ascending=True)
+
+        assert isinstance(request, ListEarnStrategiesRequest)
+        assert request.ascending is True
+        assert response is mock_response
+
+    def test_list_strategies_with_limit(self):
+        """Test list_strategies with limit parameter"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=ListEarnStrategiesResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = EarnChannel(mock_client)
+        request, response = channel.list_strategies(limit=10)
+
+        assert isinstance(request, ListEarnStrategiesRequest)
+        assert request.limit == 10
+        assert response is mock_response
+
+    def test_list_strategies_with_lock_type(self):
+        """Test list_strategies with lock_type parameter"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=ListEarnStrategiesResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = EarnChannel(mock_client)
+        request, response = channel.list_strategies(lock_type=["flex", "bonded"])
+
+        assert isinstance(request, ListEarnStrategiesRequest)
+        assert request.lock_type == ["flex", "bonded"]
+        assert response is mock_response
+
+    def test_list_strategies_with_cursor_string(self):
+        """Test list_strategies with cursor as string"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=ListEarnStrategiesResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = EarnChannel(mock_client)
+        request, response = channel.list_strategies(cursor="next_page_cursor")
+
+        assert isinstance(request, ListEarnStrategiesRequest)
+        assert request.cursor == "next_page_cursor"
+        assert response is mock_response
+
+    def test_list_strategies_with_cursor_bool(self):
+        """Test list_strategies with cursor as boolean"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=ListEarnStrategiesResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = EarnChannel(mock_client)
+        request, response = channel.list_strategies(cursor=True)
+
+        assert isinstance(request, ListEarnStrategiesRequest)
+        assert request.cursor is True
+        assert response is mock_response
+
+    def test_list_strategies_all_parameters(self):
+        """Test list_strategies with all parameters"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=ListEarnStrategiesResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = EarnChannel(mock_client)
+        request, response = channel.list_strategies(
+            ascending=True,
+            asset="ETH",
+            cursor=True,
+            limit=25,
+            lock_type=["flex"],
+        )
+
+        assert isinstance(request, ListEarnStrategiesRequest)
+        assert request.ascending is True
+        assert request.asset == "ETH"
+        assert request.cursor is True
+        assert request.limit == 25
+        assert request.lock_type == ["flex"]
+        assert response is mock_response
+
+    def test_list_strategies_returns_tuple(self):
+        """Test that list_strategies returns proper tuple"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=ListEarnStrategiesResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = EarnChannel(mock_client)
+        result = channel.list_strategies()
+
+        assert isinstance(result, tuple)
+        assert len(result) == 2
+        request, response = result
+        assert isinstance(request, ListEarnStrategiesRequest)
+        assert response is mock_response
+
+
+class TestEarnChannelListAllocations:
+    """Tests for list_allocations method"""
+
+    def test_list_allocations_no_parameters(self):
+        """Test list_allocations with no parameters"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=ListEarnAllocationsResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = EarnChannel(mock_client)
+        request, response = channel.list_allocations()
+
+        assert isinstance(request, ListEarnAllocationsRequest)
+        assert request.ascending is None
+        assert request.asset is None
+        assert request.converted_asset is None
+        assert request.cursor is None
+        assert request.hide_zero_allocations is None
+        assert response is mock_response
+
+    def test_list_allocations_with_asset(self):
+        """Test list_allocations with asset parameter"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=ListEarnAllocationsResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = EarnChannel(mock_client)
+        request, response = channel.list_allocations(asset="XBT")
+
+        assert isinstance(request, ListEarnAllocationsRequest)
+        assert request.asset == "XBT"
+        assert response is mock_response
+
+    def test_list_allocations_with_converted_asset(self):
+        """Test list_allocations with converted_asset parameter"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=ListEarnAllocationsResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = EarnChannel(mock_client)
+        request, response = channel.list_allocations(converted_asset="USD")
+
+        assert isinstance(request, ListEarnAllocationsRequest)
+        assert request.converted_asset == "USD"
+        assert response is mock_response
+
+    def test_list_allocations_with_hide_zero_allocations(self):
+        """Test list_allocations with hide_zero_allocations parameter"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=ListEarnAllocationsResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = EarnChannel(mock_client)
+        request, response = channel.list_allocations(hide_zero_allocations=True)
+
+        assert isinstance(request, ListEarnAllocationsRequest)
+        assert request.hide_zero_allocations is True
+        assert response is mock_response
+
+    def test_list_allocations_with_ascending(self):
+        """Test list_allocations with ascending parameter"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=ListEarnAllocationsResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = EarnChannel(mock_client)
+        request, response = channel.list_allocations(ascending=False)
+
+        assert isinstance(request, ListEarnAllocationsRequest)
+        assert request.ascending is False
+        assert response is mock_response
+
+    def test_list_allocations_with_cursor(self):
+        """Test list_allocations with cursor parameter"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=ListEarnAllocationsResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = EarnChannel(mock_client)
+        request, response = channel.list_allocations(cursor="cursor_value")
+
+        assert isinstance(request, ListEarnAllocationsRequest)
+        assert request.cursor == "cursor_value"
+        assert response is mock_response
+
+    def test_list_allocations_all_parameters(self):
+        """Test list_allocations with all parameters"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=ListEarnAllocationsResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = EarnChannel(mock_client)
+        request, response = channel.list_allocations(
+            ascending=True,
+            asset="ETH",
+            converted_asset="USD",
+            cursor=False,
+            hide_zero_allocations=True,
+        )
+
+        assert isinstance(request, ListEarnAllocationsRequest)
+        assert request.ascending is True
+        assert request.asset == "ETH"
+        assert request.converted_asset == "USD"
+        assert request.cursor is False
+        assert request.hide_zero_allocations is True
+        assert response is mock_response
+
+    def test_list_allocations_returns_tuple(self):
+        """Test that list_allocations returns proper tuple"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=ListEarnAllocationsResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = EarnChannel(mock_client)
+        result = channel.list_allocations()
+
+        assert isinstance(result, tuple)
+        assert len(result) == 2
+        request, response = result
+        assert isinstance(request, ListEarnAllocationsRequest)
+        assert response is mock_response
+
+
+class TestEarnChannelAllocateFunds:
+    """Tests for allocate_funds method"""
+
+    def test_allocate_funds_with_string_amount(self):
+        """Test allocate_funds with string amount"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=AllocateEarnFundsResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = EarnChannel(mock_client)
+        request, response = channel.allocate_funds(
+            amount="4.3", strategy_id="ESRFUO3-Q62XD-WIOIL7"
+        )
+
+        assert isinstance(request, AllocateEarnFundsRequest)
+        assert request.amount == "4.3"
+        assert request.strategy_id == "ESRFUO3-Q62XD-WIOIL7"
+        assert response is mock_response
+
+    def test_allocate_funds_with_float_amount(self):
+        """Test allocate_funds with float amount"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=AllocateEarnFundsResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = EarnChannel(mock_client)
+        request, response = channel.allocate_funds(amount=10.5, strategy_id="ESRFUO3-Q62XD-WIOIL7")
+
+        assert isinstance(request, AllocateEarnFundsRequest)
+        assert request.amount == "10.5"
+        assert request.strategy_id == "ESRFUO3-Q62XD-WIOIL7"
+        assert response is mock_response
+
+    def test_allocate_funds_with_int_amount(self):
+        """Test allocate_funds with integer amount"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=AllocateEarnFundsResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = EarnChannel(mock_client)
+        request, response = channel.allocate_funds(amount=5, strategy_id="ESRFUO3-Q62XD-WIOIL7")
+
+        assert isinstance(request, AllocateEarnFundsRequest)
+        assert request.amount == "5"
+        assert request.strategy_id == "ESRFUO3-Q62XD-WIOIL7"
+        assert response is mock_response
+
+    def test_allocate_funds_returns_tuple(self):
+        """Test that allocate_funds returns proper tuple"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=AllocateEarnFundsResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = EarnChannel(mock_client)
+        result = channel.allocate_funds(amount="1.0", strategy_id="STRAT123")
+
+        assert isinstance(result, tuple)
+        assert len(result) == 2
+        request, response = result
+        assert isinstance(request, AllocateEarnFundsRequest)
+        assert response is mock_response
+
+    def test_allocate_funds_request_called_with_correct_schema(self):
+        """Test that allocate_funds calls client.request with correct schema"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=AllocateEarnFundsResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = EarnChannel(mock_client)
+        request, _ = channel.allocate_funds(amount="2.0", strategy_id="STRAT456")
+
+        mock_client.request.assert_called_once_with(request)
+
+
+class TestEarnChannelDeallocateFunds:
+    """Tests for deallocate_funds method"""
+
+    def test_deallocate_funds_with_string_amount(self):
+        """Test deallocate_funds with string amount"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=DeallocateEarnFundsResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = EarnChannel(mock_client)
+        request, response = channel.deallocate_funds(
+            amount="4.3", strategy_id="ESRFUO3-Q62XD-WIOIL7"
+        )
+
+        assert isinstance(request, DeallocateEarnFundsRequest)
+        assert request.amount == "4.3"
+        assert request.strategy_id == "ESRFUO3-Q62XD-WIOIL7"
+        assert response is mock_response
+
+    def test_deallocate_funds_with_float_amount(self):
+        """Test deallocate_funds with float amount"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=DeallocateEarnFundsResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = EarnChannel(mock_client)
+        request, response = channel.deallocate_funds(
+            amount=7.8, strategy_id="ESRFUO3-Q62XD-WIOIL7"
+        )
+
+        assert isinstance(request, DeallocateEarnFundsRequest)
+        assert request.amount == "7.8"
+        assert request.strategy_id == "ESRFUO3-Q62XD-WIOIL7"
+        assert response is mock_response
+
+    def test_deallocate_funds_with_int_amount(self):
+        """Test deallocate_funds with integer amount"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=DeallocateEarnFundsResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = EarnChannel(mock_client)
+        request, response = channel.deallocate_funds(amount=3, strategy_id="ESRFUO3-Q62XD-WIOIL7")
+
+        assert isinstance(request, DeallocateEarnFundsRequest)
+        assert request.amount == "3"
+        assert request.strategy_id == "ESRFUO3-Q62XD-WIOIL7"
+        assert response is mock_response
+
+    def test_deallocate_funds_returns_tuple(self):
+        """Test that deallocate_funds returns proper tuple"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=DeallocateEarnFundsResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = EarnChannel(mock_client)
+        result = channel.deallocate_funds(amount="1.0", strategy_id="STRAT123")
+
+        assert isinstance(result, tuple)
+        assert len(result) == 2
+        request, response = result
+        assert isinstance(request, DeallocateEarnFundsRequest)
+        assert response is mock_response
+
+    def test_deallocate_funds_request_called_with_correct_schema(self):
+        """Test that deallocate_funds calls client.request with correct schema"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=DeallocateEarnFundsResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = EarnChannel(mock_client)
+        request, _ = channel.deallocate_funds(amount="2.0", strategy_id="STRAT456")
+
+        mock_client.request.assert_called_once_with(request)
+
+
+class TestEarnChannelGetAllocationStatus:
+    """Tests for get_allocation_status method"""
+
+    def test_get_allocation_status_basic(self):
+        """Test get_allocation_status with strategy_id"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=GetAllocationStatusResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = EarnChannel(mock_client)
+        request, response = channel.get_allocation_status(strategy_id="ESRFUO3-Q62XD-WIOIL7")
+
+        assert isinstance(request, GetAllocationStatusRequest)
+        assert request.strategy_id == "ESRFUO3-Q62XD-WIOIL7"
+        assert response is mock_response
+
+    def test_get_allocation_status_returns_tuple(self):
+        """Test that get_allocation_status returns proper tuple"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=GetAllocationStatusResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = EarnChannel(mock_client)
+        result = channel.get_allocation_status(strategy_id="STRAT123")
+
+        assert isinstance(result, tuple)
+        assert len(result) == 2
+        request, response = result
+        assert isinstance(request, GetAllocationStatusRequest)
+        assert response is mock_response
+
+    def test_get_allocation_status_request_called_with_correct_schema(self):
+        """Test that get_allocation_status calls client.request with correct schema"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=GetAllocationStatusResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = EarnChannel(mock_client)
+        request, _ = channel.get_allocation_status(strategy_id="STRAT456")
+
+        mock_client.request.assert_called_once_with(request)
+
+
+class TestEarnChannelGetDeallocationStatus:
+    """Tests for get_deallocation_status method"""
+
+    def test_get_deallocation_status_basic(self):
+        """Test get_deallocation_status with strategy_id"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=GetDeallocationStatusResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = EarnChannel(mock_client)
+        request, response = channel.get_deallocation_status(strategy_id="ESRFUO3-Q62XD-WIOIL7")
+
+        assert isinstance(request, GetDeallocationStatusRequest)
+        assert request.strategy_id == "ESRFUO3-Q62XD-WIOIL7"
+        assert response is mock_response
+
+    def test_get_deallocation_status_returns_tuple(self):
+        """Test that get_deallocation_status returns proper tuple"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=GetDeallocationStatusResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = EarnChannel(mock_client)
+        result = channel.get_deallocation_status(strategy_id="STRAT123")
+
+        assert isinstance(result, tuple)
+        assert len(result) == 2
+        request, response = result
+        assert isinstance(request, GetDeallocationStatusRequest)
+        assert response is mock_response
+
+    def test_get_deallocation_status_request_called_with_correct_schema(self):
+        """Test that get_deallocation_status calls client.request with correct schema"""
+        mock_client = MagicMock(spec=KrakenRESTClient)
+        mock_response = MagicMock(spec=GetDeallocationStatusResponse)
+        mock_client.request.return_value = mock_response
+
+        channel = EarnChannel(mock_client)
+        request, _ = channel.get_deallocation_status(strategy_id="STRAT456")
+
+        mock_client.request.assert_called_once_with(request)
