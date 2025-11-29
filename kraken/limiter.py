@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import time
 
@@ -74,7 +75,7 @@ class RateLimiter:
         return True, 0.0
 
     def wait_if_needed(self, increment: float = 1.0) -> None:
-        """Wait if necessary before making a request.
+        """Wait if necessary before making a request (synchronous).
 
         Args:
             increment: Amount to increment counter
@@ -83,4 +84,18 @@ class RateLimiter:
         if not can_proceed:
             logger.info(f"Rate limiting: sleeping for {wait_time:.2f}s")
             time.sleep(wait_time)
+            self.counter = self.max_counter
+
+    async def await_if_needed(self, increment: float = 1.0) -> None:
+        """Wait if necessary before making a request (asynchronous).
+
+        Uses asyncio.sleep() to avoid blocking the event loop.
+
+        Args:
+            increment: Amount to increment counter
+        """
+        can_proceed, wait_time = self.check_and_increment(increment)
+        if not can_proceed:
+            logger.info(f"Rate limiting: sleeping for {wait_time:.2f}s (async)")
+            await asyncio.sleep(wait_time)
             self.counter = self.max_counter

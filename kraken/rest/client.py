@@ -60,6 +60,7 @@ from kraken.exceptions import *
 from kraken.limiter import RateLimiter
 from kraken.rest.channels import KrakenChannel
 from kraken.rest.schema import BaseRequestSchema, BaseResponseWrapper, get_endpoint_info
+from kraken.rest.schema.trading import AddOrderRequest
 from kraken.utilities import get_nonce
 
 TRequest = TypeVar("TRequest", bound=BaseRequestSchema)
@@ -506,27 +507,18 @@ class KrakenRESTClient:
             >>> await client.arequest("Time")
             {'error': [], 'result': {'unixtime': 1234567890, 'rfc1123': '...'}}
         """
-        # Detect if this is a schema-based or string-based request
+        # Create request
         if isinstance(endpoint_or_schema, BaseRequestSchema):
-            # Schema-based request
             schema = endpoint_or_schema
             endpoint, response_class = get_endpoint_info(schema)
-
-            # Serialize schema to dict
             data = schema.to_api_dict()
-
-            # Make the request using the string-based logic, but catch API errors
-            # to wrap them in the response object instead of raising
             raw_response = {}
             try:
                 raw_response = await self.arequest(endpoint, data=data, headers=headers or {})
             except Exception as e:
                 raw_response["error"] = [str(e)]
-
-            # Parse and return typed response
             return response_class.from_response(raw_response)
         else:
-            # String-based request (legacy path)
             endpoint = endpoint_or_schema
             api_type = self._get_api_type(endpoint)
             url_path = f"{api_type.path}{endpoint}"
@@ -537,7 +529,7 @@ class KrakenRESTClient:
 
             # Rate limiting
             if self.enable_rate_limiting and self.rate_limiter:
-                self.rate_limiter.wait_if_needed()
+                await self.rate_limiter.await_if_needed()
 
             # Send request
             try:
@@ -584,7 +576,6 @@ class KrakenRESTClient:
                 error_list = response_json["error"]
                 error_msg = ", ".join(error_list)
                 logger.error(f"API error for {endpoint}: {error_msg}")
-                # Use first error to determine exception type
                 exception_class = classify_error(error_list[0])
                 raise exception_class(f"API error: {error_msg}")
 
