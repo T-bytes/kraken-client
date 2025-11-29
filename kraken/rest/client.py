@@ -60,7 +60,7 @@ from kraken.exceptions import *
 from kraken.limiter import RateLimiter
 from kraken.rest.channels import KrakenChannel
 from kraken.rest.schema import BaseRequestSchema, BaseResponseWrapper, get_endpoint_info
-from kraken.rest.schema.trading import AddOrderRequest
+from kraken.rest.schema.validators import compute_deadline
 from kraken.utilities import get_nonce
 
 TRequest = TypeVar("TRequest", bound=BaseRequestSchema)
@@ -318,7 +318,7 @@ class KrakenRESTClient:
         try:
             match endpoint:
                 case "AddOrder":
-                    data["deadline"] = AddOrderRequest.compute_deadline()
+                    data["deadline"] = compute_deadline()
                     logger.debug(f"Generated deadline at request time: {data['deadline']}")
                 case _:
                     raise NotImplementedError(f"Endpoint '{endpoint}' is not supported")

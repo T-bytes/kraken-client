@@ -16,6 +16,7 @@ from kraken.exceptions import (
 )
 from kraken.rest.channels import KrakenChannel
 from kraken.rest.client import KrakenRESTClient
+from kraken.rest.schema.market import GetServerTimeRequest
 
 
 class TestAPIType:
@@ -320,6 +321,84 @@ class TestKrakenRESTClientMethods:
 
         assert client._sync_client is None
 
+    def test_prepare_order_data_add_order(self, client):
+        """Test _prepare_order_data with AddOrder endpoint"""
+        data = {"pair": "XBTUSD", "type": "buy", "ordertype": "market", "volume": "1.0"}
+        result = client._prepare_order_data("AddOrder", data)
+
+        assert "deadline" in result
+        assert isinstance(result["deadline"], str)
+        assert result["pair"] == "XBTUSD"
+
+    def test_prepare_order_data_unsupported_endpoint(self, client):
+        """Test _prepare_order_data with unsupported endpoint"""
+        data = {"param": "value"}
+        result = client._prepare_order_data("UnsupportedEndpoint", data)
+
+        assert "deadline" not in result
+        assert result["param"] == "value"
+
+    @patch("kraken.rest.client.compute_deadline")
+    def test_prepare_order_data_exception_handling(self, mock_compute_deadline, client):
+        """Test _prepare_order_data exception handling"""
+        mock_compute_deadline.side_effect = Exception("Deadline computation failed")
+        data = {"pair": "XBTUSD"}
+
+        result = client._prepare_order_data("AddOrder", data)
+
+        assert "deadline" not in result
+        assert result["pair"] == "XBTUSD"
+
+    @patch("httpx.Client.get")
+    def test_request_with_schema_success(self, mock_get, client_no_auth):
+        """Test schema-based request (successful)"""
+        mock_response = Mock()
+        mock_response.json.return_value = {
+            "error": [],
+            "result": {"unixtime": 1234567890, "rfc1123": "Mon, 01 Jan 2024 00:00:00 +0000"},
+        }
+        mock_response.raise_for_status = Mock()
+        mock_get.return_value = mock_response
+
+        schema = GetServerTimeRequest()
+        response = client_no_auth.request(schema)
+
+        assert response.is_success
+        assert response.success.unixtime == 1234567890
+        mock_get.assert_called_once()
+
+    @patch("httpx.Client.get")
+    def test_request_with_schema_exception(self, mock_get, client_no_auth):
+        """Test schema-based request (exception handling)"""
+        mock_get.side_effect = KrakenConnectionError("Connection failed")
+
+        schema = GetServerTimeRequest()
+        response = client_no_auth.request(schema)
+
+        assert not response.is_success
+        assert response.failure is not None
+        assert len(response.failure.error) > 0
+        assert "Connection failed" in response.failure.error[0]
+
+    @patch("httpx.Client.post")
+    def test_request_private_with_otp(self, mock_post):
+        """Test private request with OTP"""
+        api_key = "test_key"
+        api_secret = base64.b64encode(b"test_secret").decode()
+        client = KrakenRESTClient(api_key=api_key, api_secret=api_secret, otp="123456")
+
+        mock_response = Mock()
+        mock_response.json.return_value = {"error": [], "result": {"balance": "1000"}}
+        mock_response.raise_for_status = Mock()
+        mock_post.return_value = mock_response
+
+        result = client.request("Balance")
+
+        assert result["error"] == []
+        call_kwargs = mock_post.call_args[1]
+        assert "data" in call_kwargs
+        assert call_kwargs["data"]["otp"] == "123456"
+
 
 class TestExceptionHierarchy:
     """Tests for exception hierarchy"""
@@ -570,3 +649,59 @@ class TestKrakenRESTClientAsyncMethods:
 
         aclose_mock.assert_called_once()
         assert async_client._async_client is None
+
+    @pytest.mark.asyncio
+    async def test_arequest_with_schema_success(self, async_client_no_auth):
+        """Test async schema-based request (successful)"""
+        with patch("httpx.AsyncClient.get") as mock_get:
+            mock_response = Mock()
+            mock_response.json.return_value = {
+                "error": [],
+                "result": {"unixtime": 1234567890, "rfc1123": "Mon, 01 Jan 2024 00:00:00 +0000"},
+            }
+            mock_response.raise_for_status = Mock()
+            mock_get.return_value = mock_response
+
+            async with async_client_no_auth as client:
+                schema = GetServerTimeRequest()
+                response = await client.arequest(schema)
+
+            assert response.is_success
+            assert response.success.unixtime == 1234567890
+            mock_get.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_arequest_with_schema_exception(self, async_client_no_auth):
+        """Test async schema-based request (exception handling)"""
+        with patch("httpx.AsyncClient.get") as mock_get:
+            mock_get.side_effect = KrakenConnectionError("Connection failed")
+
+            async with async_client_no_auth as client:
+                schema = GetServerTimeRequest()
+                response = await client.arequest(schema)
+
+            assert not response.is_success
+            assert response.failure is not None
+            assert len(response.failure.error) > 0
+            assert "Connection failed" in response.failure.error[0]
+
+    @pytest.mark.asyncio
+    async def test_arequest_private_with_otp(self):
+        """Test async private request with OTP"""
+        api_key = "test_key"
+        api_secret = base64.b64encode(b"test_secret").decode()
+        client = KrakenRESTClient(api_key=api_key, api_secret=api_secret, otp="654321")
+
+        with patch("httpx.AsyncClient.post") as mock_post:
+            mock_response = Mock()
+            mock_response.json.return_value = {"error": [], "result": {"balance": "2000"}}
+            mock_response.raise_for_status = Mock()
+            mock_post.return_value = mock_response
+
+            async with client as c:
+                result = await c.arequest("Balance")
+
+            assert result["error"] == []
+            call_kwargs = mock_post.call_args[1]
+            assert "data" in call_kwargs
+            assert call_kwargs["data"]["otp"] == "654321"
